@@ -46,18 +46,74 @@ if [[ ! -x "$BIN" ]]; then
   exit 1
 fi
 
-# If tokmeter isn't on PATH but exists via nix profile / repo result, pass it through.
-if [[ -z "${TOKMETER_BIN:-}" ]]; then
-  for candidate in \
+# Prefer a CLI that supports `stats` (repo build / fresh nix result) over a
+# stale profile install that only has the older surface.
+pick_tokmeter() {
+  local c
+  for c in \
+    "$ROOT/result/bin/tokmeter" \
+    "$ROOT/dist/index.js" \
+    "${HOME}/.nix-profile/bin/tokmeter" \
+    /run/current-system/sw/bin/tokmeter
+  do
+    if [[ -x "$c" ]] || [[ -f "$c" && "$c" == *.js ]]; then
+      # Probe for `stats` support when it's a real binary.
+      if [[ -x "$c" ]] && "$c" stats --help >/dev/null 2>&1; then
+        echo "$c"
+        return 0
+      fi
+      if [[ -x "$c" ]] && "$c" --help 2>&1 | grep -q 'stats'; then
+        echo "$c"
+        return 0
+      fi
+    fi
+  done
+  # Fall back: any executable tokmeter (HUD will fall back to --json).
+  for c in \
     "$ROOT/result/bin/tokmeter" \
     "${HOME}/.nix-profile/bin/tokmeter" \
     /run/current-system/sw/bin/tokmeter
   do
-    if [[ -x "$candidate" ]]; then
-      export TOKMETER_BIN="$candidate"
-      break
+    if [[ -x "$c" ]]; then
+      echo "$c"
+      return 0
     fi
   done
+  if command -v tokmeter >/dev/null 2>&1; then
+    command -v tokmeter
+    return 0
+  fi
+  return 1
+}
+
+if [[ -z "${TOKMETER_BIN:-}" ]]; then
+  if bin="$(pick_tokmeter)"; then
+    export TOKMETER_BIN="$bin"
+  fi
 fi
 
-exec "$BIN" "$@"
+# Rebuild CLI into ./result when profile is stale (no stats subcommand).
+if [[ -n "${TOKMETER_BIN:-}" ]] && [[ -x "$TOKMETER_BIN" ]]; then
+  if ! "$TOKMETER_BIN" --help 2>&1 | grep -q 'stats'; then
+    if command -v nix >/dev/null 2>&1 && [[ -f "$ROOT/flake.nix" ]]; then
+      echo "Updating tokmeter CLI (installed binary lacks 'stats')…"
+      (cd "$ROOT" && nix build .)
+      if [[ -x "$ROOT/result/bin/tokmeter" ]]; then
+        export TOKMETER_BIN="$ROOT/result/bin/tokmeter"
+      fi
+    fi
+  fi
+fi
+
+# Keep ~/.local/bin in sync so GUI launches (no direnv PATH) find a modern CLI.
+if [[ -n "${TOKMETER_BIN:-}" ]] && [[ -x "$TOKMETER_BIN" ]] \
+  && "$TOKMETER_BIN" --help 2>&1 | grep -q 'stats'; then
+  mkdir -p "${HOME}/.local/bin"
+  if [[ "$TOKMETER_BIN" != "${HOME}/.local/bin/tokmeter" ]]; then
+    cp -f "$TOKMETER_BIN" "${HOME}/.local/bin/tokmeter"
+    chmod +x "${HOME}/.local/bin/tokmeter"
+  fi
+  export TOKMETER_BIN="${HOME}/.local/bin/tokmeter"
+fi
+
+exec env TOKMETER_BIN="${TOKMETER_BIN:-}" "$BIN" "$@"

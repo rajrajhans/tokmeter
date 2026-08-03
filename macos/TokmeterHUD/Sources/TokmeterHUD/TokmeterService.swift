@@ -40,18 +40,20 @@ enum TokmeterService {
         }
 
         let home = NSHomeDirectory()
+        // Prefer repo `result/` / `~/.local` builds (may include newer `stats`)
+        // over a stale home-manager/nix-profile install.
         let candidates: [String] = [
-            "\(home)/.nix-profile/bin/tokmeter",
-            "/run/current-system/sw/bin/tokmeter",
             "\(home)/.local/bin/tokmeter",
-            "/opt/homebrew/bin/tokmeter",
-            "/usr/local/bin/tokmeter",
-            // Relative to this binary when installed next to tokmeter
-            Bundle.main.bundlePath + "/tokmeter",
-            // Common monorepo / nix result layouts
             FileManager.default.currentDirectoryPath + "/result/bin/tokmeter",
             FileManager.default.currentDirectoryPath + "/../result/bin/tokmeter",
             FileManager.default.currentDirectoryPath + "/../../result/bin/tokmeter",
+            // Absolute monorepo path when HUD is launched from scripts/
+            "\(home)/projects/tokmeter/result/bin/tokmeter",
+            "\(home)/.nix-profile/bin/tokmeter",
+            "/run/current-system/sw/bin/tokmeter",
+            "/opt/homebrew/bin/tokmeter",
+            "/usr/local/bin/tokmeter",
+            Bundle.main.bundlePath + "/tokmeter",
         ]
 
         for path in candidates {
@@ -101,7 +103,7 @@ enum TokmeterService {
         return nil
     }
 
-    /// Run `tokmeter --json` and decode.
+    /// Run `tokmeter stats --json` (detailed) with fallback to `tokmeter --json`.
     static func fetch() async throws -> TokmeterPayload {
         try await Task.detached(priority: .userInitiated) {
             try runAndDecode()
@@ -113,10 +115,24 @@ enum TokmeterService {
             throw TokmeterServiceError.binaryNotFound
         }
 
+        // Prefer detailed local stats; older installs only understand `--json`.
+        do {
+            return try runBinary(bin, arguments: ["stats", "--json"])
+        } catch let err as TokmeterServiceError {
+            if case .nonZeroExit(_, let stderr) = err,
+               stderr.localizedCaseInsensitiveContains("unexpected argument")
+                || stderr.localizedCaseInsensitiveContains("stats")
+            {
+                return try runBinary(bin, arguments: ["--json"])
+            }
+            throw err
+        }
+    }
+
+    private static func runBinary(_ bin: String, arguments: [String]) throws -> TokmeterPayload {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: bin)
-        // Detailed view: plan quotas + local activity (tokens/sessions/models).
-        process.arguments = ["stats", "--json"]
+        process.arguments = arguments
 
         let stdout = Pipe()
         let stderr = Pipe()
