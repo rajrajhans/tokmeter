@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - Preferences
@@ -20,7 +21,6 @@ final class HUDModel: ObservableObject {
     @Published var globalError: String?
     @Published var binaryPath: String?
 
-    /// Seconds between automatic refreshes (driven by @AppStorage in the view).
     var refreshIntervalSeconds: Int = HUDPreferences.defaultInterval
 
     private var timer: Timer?
@@ -70,7 +70,6 @@ final class HUDModel: ObservableObject {
             } catch {
                 if Task.isCancelled { return }
                 globalError = error.localizedDescription
-                // Keep previous accounts visible on transient errors.
             }
         }
         refreshTask = task
@@ -91,7 +90,7 @@ struct ContentView: View {
             header
             Divider().opacity(0.35)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 14) {
                     if let globalError = model.globalError, model.accounts.isEmpty {
                         errorBanner(globalError)
                     } else if model.accounts.isEmpty, !model.isLoading {
@@ -102,19 +101,20 @@ struct ContentView: View {
                         }
                         if let globalError = model.globalError {
                             Text(globalError)
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.orange.opacity(0.9))
-                                .padding(.top, 2)
+                                .padding(.top, 4)
                         }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(width: 320)
-        .frame(minHeight: 120, maxHeight: 520)
-        .background(panelBackground)
+        .frame(minWidth: 340, idealWidth: 420, maxWidth: .infinity,
+               minHeight: 240, idealHeight: 520, maxHeight: .infinity)
+        .background(Color(red: 0.09, green: 0.09, blue: 0.11))
         .preferredColorScheme(.dark)
         .background(WindowConfigurator(keepOnTop: keepOnTop))
         .onAppear {
@@ -128,23 +128,19 @@ struct ContentView: View {
         }
     }
 
-    private var panelBackground: some View {
-        Color(red: 0.09, green: 0.09, blue: 0.11)
-    }
-
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Text("tokmeter")
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .foregroundStyle(Color.white.opacity(0.92))
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 8)
 
             Button {
                 Task { await model.refresh() }
             } label: {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .rotationEffect(.degrees(model.isLoading ? 360 : 0))
                     .animation(
                         model.isLoading
@@ -157,9 +153,10 @@ struct ContentView: View {
             .foregroundStyle(Color.white.opacity(0.75))
             .help("Refresh now")
             .disabled(model.isLoading)
+            .keyboardShortcut("r", modifiers: [.command])
 
             Text(model.fetchedAt.map { Formatters.headerTime($0) } ?? "—")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.white.opacity(0.45))
                 .help("Last updated")
 
@@ -180,59 +177,53 @@ struct ContentView: View {
                     }
                 }
 
+                Divider()
                 if let path = model.binaryPath {
-                    Divider()
                     Text(path)
                         .font(.system(size: 10))
                 } else {
-                    Divider()
-                    Text("tokmeter not found")
-                }
-
-                Divider()
-                Button("Quit TokmeterHUD") {
-                    NSApplication.shared.terminate(nil)
+                    Text("tokmeter not found — set TOKMETER_BIN")
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 12, weight: .bold))
-                    .frame(width: 20, height: 18)
+                Image(systemName: "ellipsis.circle")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 22, height: 20)
                     .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 22)
+            .frame(width: 24)
             .foregroundStyle(Color.white.opacity(0.7))
             .help("Settings")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("No accounts")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.85))
-            Text("Configure with `tokmeter accounts list` or set TOKMETER_BIN.")
-                .font(.system(size: 11))
+            Text("Run `tokmeter accounts list` or set TOKMETER_BIN so this app can find the CLI.")
+                .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
     }
 
     private func errorBanner(_ message: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Error")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color.red.opacity(0.9))
             Text(message)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(.white.opacity(0.7))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
     }
 }
 
@@ -242,28 +233,51 @@ struct AccountBlock: View {
     let account: AccountSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(account.displayTitle)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color.white.opacity(0.92))
-                .lineLimit(1)
+                .lineLimit(2)
 
             if !account.ok {
                 HStack(alignment: .top, spacing: 6) {
                     Text("error")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Color.red.opacity(0.95))
                     Text(account.error ?? "unknown error")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(Color.white.opacity(0.55))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                ForEach(account.windows) { window in
+                ForEach(account.windows.filter { win in
+                    // Prefer rich local stats over coarse Grok "Local sessions" row
+                    !(account.provider == "grok"
+                        && win.id == "local"
+                        && account.local != nil
+                        && !(account.local?.lines.isEmpty ?? true))
+                }) { window in
                     WindowRow(window: window)
                 }
             }
+
+            if let local = account.local, !local.lines.isEmpty {
+                ForEach(local.lines) { line in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(line.label)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.white.opacity(0.45))
+                            .frame(width: 100, alignment: .leading)
+                        Text(line.value)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.cyan.opacity(0.9))
+                            .lineLimit(2)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -271,43 +285,56 @@ struct WindowRow: View {
     let window: UsageWindow
 
     var body: some View {
-        HStack(alignment: .center, spacing: 6) {
-            Text(window.label)
-                .font(.system(size: 11))
-                .foregroundStyle(Color.white.opacity(0.55))
-                .lineLimit(1)
-                .frame(width: 108, alignment: .leading)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 8) {
+                label
+                    .frame(width: 120, alignment: .leading)
+                metricsRow
+                Spacer(minLength: 0)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                label
+                metricsRow
+            }
+        }
+    }
 
-            if window.showsProgressBar, let pct = window.usedPercent {
-                ProgressBar(percent: pct, height: 5, width: 64)
-                Text(Formatters.percent(pct))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(percentColor(pct))
-                    .frame(width: 34, alignment: .trailing)
-                if let reset = Formatters.resetLabel(
-                    resetsAt: window.resetsAt,
-                    resetsInSeconds: window.resetsInSeconds
-                ) {
-                    Text(reset)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Color.white.opacity(0.38))
-                        .lineLimit(1)
-                }
-            } else {
-                Text(window.secondaryText ?? "—")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color.white.opacity(0.45))
+    private var label: some View {
+        Text(window.label)
+            .font(.system(size: 12))
+            .foregroundStyle(Color.white.opacity(0.55))
+            .lineLimit(1)
+    }
+
+    @ViewBuilder
+    private var metricsRow: some View {
+        if window.showsProgressBar, let pct = window.usedPercent {
+            ProgressBar(percent: pct, height: 6, width: 80)
+            Text(Formatters.percent(pct))
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(percentColor(pct))
+                .frame(width: 36, alignment: .trailing)
+            if let reset = Formatters.resetLabel(
+                resetsAt: window.resetsAt,
+                resetsInSeconds: window.resetsInSeconds
+            ) {
+                Text(reset)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.white.opacity(0.38))
                     .lineLimit(1)
             }
-
-            Spacer(minLength: 0)
+        } else {
+            Text(window.secondaryText ?? "—")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.white.opacity(0.45))
+                .lineLimit(2)
         }
     }
 }
 
-// MARK: - Window level / join-all-spaces
+// MARK: - Window chrome / keep-on-top
 
-/// Applies floating window level + canJoinAllSpaces when Keep on Top is enabled.
+/// Normal window chrome + optional floating “always on top”.
 struct WindowConfigurator: NSViewRepresentable {
     var keepOnTop: Bool
 
@@ -323,15 +350,20 @@ struct WindowConfigurator: NSViewRepresentable {
 
     private func configure(_ window: NSWindow?) {
         guard let window else { return }
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
+
+        window.title = "tokmeter"
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
         window.isMovableByWindowBackground = true
         window.backgroundColor = NSColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1)
+        window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable])
+        window.setContentSize(NSSize(width: max(window.frame.width, 360),
+                                     height: max(window.frame.height, 280)))
+        window.minSize = NSSize(width: 340, height: 220)
 
         if keepOnTop {
             window.level = .floating
             window.collectionBehavior.insert([.canJoinAllSpaces, .fullScreenAuxiliary])
-            window.hidesOnDeactivate = false
         } else {
             window.level = .normal
             window.collectionBehavior.remove([.canJoinAllSpaces, .fullScreenAuxiliary])

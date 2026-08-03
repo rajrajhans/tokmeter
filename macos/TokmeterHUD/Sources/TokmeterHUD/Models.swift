@@ -7,6 +7,18 @@ struct TokmeterPayload: Codable, Sendable {
     var accounts: [AccountSnapshot]
 }
 
+struct LocalStatsLine: Codable, Identifiable, Sendable {
+    var label: String
+    var value: String
+    var id: String { label + value }
+}
+
+struct LocalStats: Codable, Sendable {
+    var period: String?
+    var source: String?
+    var lines: [LocalStatsLine]
+}
+
 struct AccountSnapshot: Codable, Identifiable, Sendable {
     var provider: String
     var accountId: String
@@ -18,6 +30,7 @@ struct AccountSnapshot: Codable, Identifiable, Sendable {
     var source: String?
     var provenance: String?
     var windows: [UsageWindow]
+    var local: LocalStats?
     var extras: JSONValue?
     var fetchedAt: String?
 

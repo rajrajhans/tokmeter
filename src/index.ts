@@ -25,6 +25,7 @@ function printHelp(): void {
 
 Usage:
   tokmeter [usage] [--provider <name>] [--json]
+  tokmeter stats [--provider <name>] [--json]   # quotas + local activity
   tokmeter accounts list|add|remove …
 
   # Capture Claude logins (for metering + switching)
@@ -47,7 +48,8 @@ Claude multi-account:
   4. tokmeter use-claude pro
 
 Examples:
-  tokmeter
+  tokmeter                    # plan quotas only (concise)
+  tokmeter stats              # + local tokens/sessions/models
   tokmeter --provider claude --json
   tokmeter claude status
   tokmeter use-claude max
@@ -57,6 +59,7 @@ Examples:
 type Parsed = {
   command:
     | "usage"
+    | "stats"
     | "accounts-list"
     | "accounts-add"
     | "accounts-remove"
@@ -101,6 +104,9 @@ function parseArgs(argv: string[]): Parsed {
   if (first === "usage") {
     args.shift();
     command = "usage";
+  } else if (first === "stats") {
+    args.shift();
+    command = "stats";
   } else if (first === "accounts") {
     args.shift();
     const sub = args.shift();
@@ -206,6 +212,7 @@ function parseArgs(argv: string[]): Parsed {
 async function cmdUsage(
   provider: ProviderName | undefined,
   json: boolean,
+  opts: { includeLocal?: boolean } = {},
 ): Promise<number> {
   const cfg = await loadConfig();
   const accounts = filterAccounts(cfg.accounts, provider);
@@ -225,7 +232,16 @@ async function cmdUsage(
     return 1;
   }
 
-  const snapshots = await fetchAllSnapshots(accounts);
+  const includeLocal = opts.includeLocal === true;
+  let snapshots = await fetchAllSnapshots(accounts, { includeLocal });
+  // Concise mode: drop coarse per-provider local activity windows (e.g. Grok).
+  if (!includeLocal) {
+    snapshots = snapshots.map((s) => ({
+      ...s,
+      windows: s.windows.filter((w) => w.id !== "local"),
+      local: undefined,
+    }));
+  }
   if (json) {
     process.stdout.write(renderJson(snapshots));
   } else {
@@ -458,7 +474,14 @@ async function main(): Promise<void> {
       printHelp();
       break;
     case "usage":
-      code = await cmdUsage(parsed.provider, parsed.json);
+      code = await cmdUsage(parsed.provider, parsed.json, {
+        includeLocal: false,
+      });
+      break;
+    case "stats":
+      code = await cmdUsage(parsed.provider, parsed.json, {
+        includeLocal: true,
+      });
       break;
     case "accounts-list":
       code = await cmdAccountsList(parsed.json);

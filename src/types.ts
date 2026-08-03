@@ -40,6 +40,19 @@ export type Provenance =
   | "partial"
   | "unknown";
 
+/** Machine-local activity stats (from JSONL / signals — not plan quotas). */
+export type LocalStatsLine = {
+  label: string;
+  value: string;
+};
+
+export type LocalStats = {
+  period: string;
+  source: "local";
+  lines: LocalStatsLine[];
+  raw?: Record<string, unknown>;
+};
+
 export type ProviderSnapshot = {
   provider: ProviderName;
   accountId: string;
@@ -51,6 +64,8 @@ export type ProviderSnapshot = {
   source: string;
   provenance: Provenance;
   windows: UsageWindow[];
+  /** Local activity (tokens today, models, …) — often machine-wide per provider. */
+  local?: LocalStats | null;
   extras?: Record<string, unknown>;
   fetchedAt: string;
 };

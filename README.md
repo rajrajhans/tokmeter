@@ -41,9 +41,10 @@ npm install && npm run build && npm start
 ## Usage
 
 ```bash
-tokmeter                           # all accounts
+tokmeter                           # plan quotas (concise)
+tokmeter stats                     # + local activity (tokens, sessions, models)
 tokmeter --provider claude
-tokmeter --json
+tokmeter stats --json
 tokmeter accounts list
 ```
 
@@ -76,23 +77,23 @@ Config: `~/.config/tokmeter/config.json` (auto-discovers defaults if missing).
 
 ## How it works
 
-| Provider | Credentials | Usage |
-|----------|-------------|--------|
-| **Claude** | Keychain / captured JSON | `GET api.anthropic.com/api/oauth/usage` |
-| **Codex** | `~/.codex/auth.json` | `GET chatgpt.com/backend-api/wham/usage` |
-| **Grok** | `~/.grok/auth.json` | gRPC-web billing + local session signals |
+| Provider | Plan quotas | Local activity (today) |
+|----------|-------------|------------------------|
+| **Claude** | OAuth usage API | `~/.claude/projects` jsonl + daily cost cache |
+| **Codex** | ChatGPT `wham/usage` | `~/.codex/sessions/**/rollout-*.jsonl` token_count |
+| **Grok** | gRPC-web credits | `~/.grok/sessions/**/signals.json` + active sessions |
 
-Fetches run in parallel; one failure doesn’t hide the rest. Tokens never printed. Quota APIs are unofficial — treat as advisory.
+Local lines (sessions, tokens, models, projects, …) are machine-wide per provider — shown once under the first account of that type. Fetches run in parallel; tokens never printed. Quota APIs are unofficial — treat as advisory.
 
-## Menu bar HUD (macOS)
+## Desktop app (macOS)
 
-Always-available dark panel that polls `tokmeter --json`:
+Normal window (move / resize / Dock) that polls `tokmeter --json`:
 
 ```bash
 ./scripts/tokmeter-hud
 ```
 
-Click the menu bar **gauge** icon → compact usage panel. Auto-refresh (default 30s), manual ↻, **Keep on Top**, Quit. See [`macos/TokmeterHUD/README.md`](macos/TokmeterHUD/README.md).
+Auto-refresh (default 30s), **⌘R** to refresh, optional **Keep on Top**. See [`macos/TokmeterHUD/README.md`](macos/TokmeterHUD/README.md).
 
 ## License
 

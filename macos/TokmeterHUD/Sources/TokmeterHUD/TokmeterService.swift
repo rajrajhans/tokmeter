@@ -115,7 +115,8 @@ enum TokmeterService {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: bin)
-        process.arguments = ["--json"]
+        // Detailed view: plan quotas + local activity (tokens/sessions/models).
+        process.arguments = ["stats", "--json"]
 
         let stdout = Pipe()
         let stderr = Pipe()

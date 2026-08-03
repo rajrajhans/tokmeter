@@ -1,4 +1,5 @@
 import type { AccountConfig, ProviderName, ProviderSnapshot } from "../types.js";
+import { attachLocalStats } from "../stats/index.js";
 import { claudeProvider } from "./claude.js";
 import { codexProvider } from "./codex.js";
 import { grokProvider } from "./grok.js";
@@ -14,8 +15,14 @@ export function getProvider(name: ProviderName): Provider {
   return providers[name];
 }
 
+export type FetchSnapshotsOptions = {
+  /** Scan local JSONL / signals for activity lines (used by `tokmeter stats`). */
+  includeLocal?: boolean;
+};
+
 export async function fetchAllSnapshots(
   accounts: AccountConfig[],
+  opts: FetchSnapshotsOptions = {},
 ): Promise<ProviderSnapshot[]> {
   const results = await Promise.allSettled(
     accounts.map((account) => {
@@ -24,7 +31,7 @@ export async function fetchAllSnapshots(
     }),
   );
 
-  return results.map((r, i) => {
+  const snapshots = results.map((r, i) => {
     if (r.status === "fulfilled") return r.value;
     const account = accounts[i];
     return {
@@ -39,6 +46,11 @@ export async function fetchAllSnapshots(
       fetchedAt: new Date().toISOString(),
     };
   });
+
+  if (opts.includeLocal) {
+    return attachLocalStats(snapshots, accounts);
+  }
+  return snapshots;
 }
 
 export { claudeProvider, codexProvider, grokProvider };

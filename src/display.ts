@@ -117,7 +117,23 @@ function renderSnapshot(s: ProviderSnapshot): string[] {
 
   lines.push(`${colors.cyan("┌")} ${bold(title)}`);
   for (const w of s.windows) {
+    // Skip Grok's coarse "Local sessions" window when we have richer local stats
+    if (
+      s.provider === "grok" &&
+      w.id === "local" &&
+      s.local &&
+      s.local.lines.length > 0
+    ) {
+      continue;
+    }
     lines.push(renderWindowLine(w));
+  }
+  if (s.local?.lines?.length) {
+    for (const line of s.local.lines) {
+      lines.push(
+        `│  ${padLabel(line.label)}${colors.cyan(line.value)}`,
+      );
+    }
   }
   if (s.extras?.warning) {
     lines.push(

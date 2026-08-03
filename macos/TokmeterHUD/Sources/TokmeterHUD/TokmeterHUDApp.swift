@@ -6,23 +6,24 @@ struct TokmeterHUDApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
+        WindowGroup("tokmeter") {
             ContentView()
-        } label: {
-            // `gauge` is available on macOS 13+; needle variants need 14+.
-            Label("tokmeter", systemImage: "gauge.medium")
         }
-        .menuBarExtraStyle(.window)
+        .defaultSize(width: 420, height: 520)
+        .commands {
+            CommandGroup(replacing: .newItem) {}
+        }
     }
 }
 
-/// Accessory app: no dock icon, menu-bar only.
+/// Normal Dock app — user can move, resize, and Cmd-Tab to it.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
+        true
     }
 }
