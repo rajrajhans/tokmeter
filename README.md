@@ -16,11 +16,11 @@ tokmeter · 2026-08-03 15:54
 │  Weekly · All models █░░░░░░░░░   14%  resets in 18h 35m
 │  Usage credits       off
 │
-┌ Codex · personal · plus · you@example.com
+┌ Codex · personal · plus
 │  Primary (7d)        ██████░░░░   61%  resets Sat 5:19 pm
 │  Credits             0
 │
-┌ Grok · personal · you@example.com
+┌ Grok · personal
 │  Identity            oidc · User
 │  Weekly credits      ██████░░░░   60%  resets in 24h 26m
 │  Local sessions      142 sessions · ~16.3M tokens (30d)

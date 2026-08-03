@@ -34,15 +34,7 @@ function providerTitle(s: ProviderSnapshot): string {
   if (s.plan && s.plan.toLowerCase() !== s.label.toLowerCase()) {
     parts.push(s.plan);
   }
-  if (s.email) parts.push(s.email);
-  // Disambiguate identical-looking cards (e.g. two Pro captures)
-  if (s.accountId && s.provider === "claude") {
-    // only when it adds info beyond label
-    const idSuffix = s.accountId.replace(/^claude-/, "");
-    if (idSuffix && idSuffix !== s.label) {
-      // keep id out of title unless labels collide — handled by caller order
-    }
-  }
+  // Email stays in JSON / snapshot data, but not in the human title.
   return parts.join(" · ");
 }
 
