@@ -315,32 +315,27 @@ async function cmdSaveClaude(
       console.log(
         `  account ${result.accountId}${result.replaced ? " (replaced)" : " (registered)"}`,
       );
+      console.log(`  (ambient claude-default removed if it was present)`);
     } else {
       console.log(
         `  (not registered — run without --no-add, or: tokmeter accounts add --provider claude --label ${result.label} --credentials-path ${result.path})`,
       );
     }
 
-    // Helpful multi-account tip
+    if (result.duplicateOf) {
+      console.log(
+        `\nNote: this login looks identical to captured slot “${result.duplicateOf}”.`,
+      );
+      console.log(
+        `      You may have captured the same Claude account twice under different labels.`,
+      );
+    }
+
     const accounts = await listAccounts();
-    const hasAmbient = accounts.some(
-      (a) =>
-        a.provider === "claude" &&
-        a.id === "claude-default" &&
-        (a.source === "auto" || !a.credentialsPath),
-    );
     const capturedCount = accounts.filter(
       (a) => a.provider === "claude" && a.credentialsPath,
     ).length;
-    if (hasAmbient && capturedCount >= 1) {
-      console.log(
-        `\nTip: ambient keychain account “claude-default” is still listed.`,
-      );
-      console.log(
-        `     After capturing both logins: tokmeter accounts remove claude-default`,
-      );
-    }
-    if (capturedCount === 1 && !hasAmbient) {
+    if (capturedCount === 1) {
       console.log(
         `\nNext: log into the other Claude account, then: tokmeter save-claude <other-label>`,
       );

@@ -26,9 +26,23 @@ function providerTitle(s: ProviderSnapshot): string {
       : s.provider === "codex"
         ? "Codex"
         : "Grok";
-  const parts = [name, s.label];
-  if (s.plan) parts.push(s.plan);
+  // Prefer plan-looking labels as-is; always show plan badge when present.
+  const parts = [name];
+  // Avoid "Claude · personal · Max 20x" when label is just a slot name —
+  // show: Claude · max · Max 20x  or  Claude · Max 20x if label == plan-ish
+  if (s.label) parts.push(s.label);
+  if (s.plan && s.plan.toLowerCase() !== s.label.toLowerCase()) {
+    parts.push(s.plan);
+  }
   if (s.email) parts.push(s.email);
+  // Disambiguate identical-looking cards (e.g. two Pro captures)
+  if (s.accountId && s.provider === "claude") {
+    // only when it adds info beyond label
+    const idSuffix = s.accountId.replace(/^claude-/, "");
+    if (idSuffix && idSuffix !== s.label) {
+      // keep id out of title unless labels collide — handled by caller order
+    }
+  }
   return parts.join(" · ");
 }
 

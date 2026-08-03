@@ -114,6 +114,8 @@ export type CaptureResult = {
   registered: boolean;
   accountId: string;
   replaced: boolean;
+  /** Another captured label with the same login (if any). */
+  duplicateOf?: string;
 };
 
 /**
@@ -138,6 +140,29 @@ export async function captureClaudeAccount(opts: {
     throw new Error("Claude credentials JSON is missing claudeAiOauth.accessToken");
   }
 
+  // Detect if this login was already captured under another label
+  // (compare refresh token fingerprints — never log the tokens).
+  const refresh = oauth.refreshToken ?? "";
+  const refreshFp = refresh ? refresh.slice(-12) : "";
+  let duplicateOf: string | undefined;
+  if (refreshFp) {
+    const slots = await listCapturedClaudeAccounts();
+    const { readJsonFile } = await import("./utils/fs.js");
+    for (const slot of slots) {
+      if (slot.label === label) continue;
+      try {
+        const other = await readJsonFile<ClaudeCredentials>(slot.path);
+        const otherRefresh = other.claudeAiOauth?.refreshToken ?? "";
+        if (otherRefresh && otherRefresh.slice(-12) === refreshFp) {
+          duplicateOf = slot.label;
+          break;
+        }
+      } catch {
+        /* skip unreadable */
+      }
+    }
+  }
+
   await writeJsonFile(path, data, 0o600);
 
   let registered = false;
@@ -150,6 +175,15 @@ export async function captureClaudeAccount(opts: {
     if (!(await pathExists(configPath()))) {
       await saveConfig(cfg);
     }
+
+    // Drop ambient keychain auto-account once the user manages explicit slots.
+    // Keeps `tokmeter` from showing the same login thrice.
+    const filtered = cfg.accounts.filter((a) => a.id !== "claude-default");
+    if (filtered.length !== cfg.accounts.length) {
+      cfg.accounts = filtered;
+      await saveConfig(cfg);
+    }
+
     const existing = cfg.accounts.find((a) => a.id === accountId);
     replaced = Boolean(existing);
     await upsertAccount({
@@ -170,6 +204,7 @@ export async function captureClaudeAccount(opts: {
     registered,
     accountId,
     replaced,
+    duplicateOf,
   };
 }
 
