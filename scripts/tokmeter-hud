@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Build (if needed) and run TokmeterHUD menubar app.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PKG="$ROOT/macos/TokmeterHUD"
+BIN_DEBUG="$PKG/.build/debug/TokmeterHUD"
+BIN_RELEASE="$PKG/.build/release/TokmeterHUD"
+
+# Prefer a real Apple toolchain over nix-managed xcode-select / SDK shims.
+# direnv/nix shells often inject an incomplete apple-sdk that breaks `swift build`.
+if [[ -x /Library/Developer/CommandLineTools/usr/bin/swift ]]; then
+  export PATH="/Library/Developer/CommandLineTools/usr/bin:$PATH"
+fi
+if [[ -d /Library/Developer/CommandLineTools ]]; then
+  if [[ "${DEVELOPER_DIR:-}" == /nix/* ]] || [[ -z "${DEVELOPER_DIR:-}" && "$(xcode-select -p 2>/dev/null || true)" == /nix/* ]]; then
+    export DEVELOPER_DIR="/Library/Developer/CommandLineTools"
+  fi
+  if [[ ! -d "${SDKROOT:-}" ]] || [[ "${SDKROOT:-}" == /nix/* ]]; then
+    if [[ -d /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk ]]; then
+      export SDKROOT="/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk"
+    fi
+  fi
+fi
+
+need_build=1
+if [[ -x "$BIN_RELEASE" ]]; then
+  # Rebuild if sources are newer than the binary.
+  if [[ -z "$(find "$PKG/Sources" "$PKG/Package.swift" -newer "$BIN_RELEASE" 2>/dev/null | head -1)" ]]; then
+    need_build=0
+  fi
+fi
+
+if [[ "$need_build" -eq 1 ]]; then
+  echo "Building TokmeterHUD (release)…"
+  (cd "$PKG" && swift build -c release)
+fi
+
+BIN="$BIN_RELEASE"
+if [[ ! -x "$BIN" ]]; then
+  BIN="$BIN_DEBUG"
+fi
+
+if [[ ! -x "$BIN" ]]; then
+  echo "error: TokmeterHUD binary not found after build" >&2
+  exit 1
+fi
+
+# If tokmeter isn't on PATH but exists via nix profile / repo result, pass it through.
+if [[ -z "${TOKMETER_BIN:-}" ]]; then
+  for candidate in \
+    "$ROOT/result/bin/tokmeter" \
+    "${HOME}/.nix-profile/bin/tokmeter" \
+    /run/current-system/sw/bin/tokmeter
+  do
+    if [[ -x "$candidate" ]]; then
+      export TOKMETER_BIN="$candidate"
+      break
+    fi
+  done
+fi
+
+exec "$BIN" "$@"

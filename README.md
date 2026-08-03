@@ -84,6 +84,16 @@ Config: `~/.config/tokmeter/config.json` (auto-discovers defaults if missing).
 
 Fetches run in parallel; one failure doesn’t hide the rest. Tokens never printed. Quota APIs are unofficial — treat as advisory.
 
+## Menu bar HUD (macOS)
+
+Always-available dark panel that polls `tokmeter --json`:
+
+```bash
+./scripts/tokmeter-hud
+```
+
+Click the menu bar **gauge** icon → compact usage panel. Auto-refresh (default 30s), manual ↻, **Keep on Top**, Quit. See [`macos/TokmeterHUD/README.md`](macos/TokmeterHUD/README.md).
+
 ## License
 
 MIT
