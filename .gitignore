@@ -1,0 +1,44 @@
+# direnv
+.direnv/
+.envrc.local
+
+# nix
+result
+result-*
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# logs
+*.log
+logs/
+
+# build / deps (common)
+node_modules/
+dist/
+build/
+target/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.tox/
+.cache/
