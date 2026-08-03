@@ -193,17 +193,15 @@
           };
         };
 
-        # `nix develop` / direnv: live `tokmeter` + release alias. No npm.
+        # `nix develop` / direnv: live `tokmeter` only.
+        # Do NOT pull `packages.default` into the shell — flake source is
+        # git-tracked-only, so uncommitted files would break `direnv allow`.
         devShells.default = pkgs.mkShell {
           packages = [
             pkgs.nodejs_22
             pkgs.typescript
             pkgs.esbuild
             tokmeter-dev
-            (pkgs.runCommand "tokmeter-release-bin" { } ''
-              mkdir -p $out/bin
-              ln -s ${tokmeter}/bin/tokmeter $out/bin/tokmeter-release
-            '')
           ];
 
           shellHook = ''
@@ -220,8 +218,7 @@
 
             echo "tokmeter dev shell ready (node $(node --version))"
             echo "  tokmeter           → live src (esbuild cache, no npm)''${TOKMETER_ROOT:+ · $TOKMETER_ROOT}"
-            echo "  tokmeter-release   → packaged flake binary"
-            echo "  nix run .          → one-shot release build"
+            echo "  nix run .          → release build (git-tracked sources)"
             echo "  nix profile install .  → install release binary"
           '';
         };

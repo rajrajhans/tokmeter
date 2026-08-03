@@ -160,11 +160,21 @@ export async function addAccount(opts: {
     throw new Error(`Account id already exists: ${id}`);
   }
 
+  const inferredSource: AccountConfig["source"] =
+    opts.source ??
+    (opts.credentialsPath
+      ? "credentials_file"
+      : opts.keychainService
+        ? "keychain"
+        : opts.codexHome || opts.grokHome
+          ? "auth_file"
+          : "auto");
+
   const account: AccountConfig = normalizeAccount({
     id,
     provider: opts.provider,
     label: opts.label,
-    source: opts.source ?? "auto",
+    source: inferredSource,
     credentialsPath: opts.credentialsPath,
     codexHome: opts.codexHome,
     grokHome: opts.grokHome,
@@ -184,6 +194,23 @@ export async function removeAccount(id: string): Promise<boolean> {
   if (cfg.accounts.length === before) return false;
   await saveConfig(cfg);
   return true;
+}
+
+/** Insert or replace an account by id. */
+export async function upsertAccount(
+  account: AccountConfig,
+): Promise<{ account: AccountConfig; replaced: boolean }> {
+  const cfg = await loadConfig();
+  const normalized = normalizeAccount(account);
+  const idx = cfg.accounts.findIndex((a) => a.id === normalized.id);
+  const replaced = idx >= 0;
+  if (replaced) {
+    cfg.accounts[idx] = normalized;
+  } else {
+    cfg.accounts.push(normalized);
+  }
+  await saveConfig(cfg);
+  return { account: normalized, replaced };
 }
 
 export function filterAccounts(

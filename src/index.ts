@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 import {
+  captureClaudeAccount,
+  listCapturedClaudeAccounts,
+} from "./claude-capture.js";
+import {
   addAccount,
   filterAccounts,
   listAccounts,
@@ -20,12 +24,20 @@ Usage:
   tokmeter accounts list
   tokmeter accounts add --provider <name> --label <label> [options]
   tokmeter accounts remove <id>
+
+  tokmeter save-claude <label> [--no-add]
+  tokmeter save-claude list
+  tokmeter claude save <label> [--no-add]     # alias of save-claude
+  tokmeter claude list                        # alias of save-claude list
+
   tokmeter --help
 
 Options:
   --provider, -p   claude | codex | grok
   --json           machine-readable output
   --help, -h       show this help
+  --no-add         with save-claude: only write the credentials file
+                   (skip registering in tokmeter config)
 
 accounts add options:
   --credentials-path <path>   Claude credentials JSON
@@ -38,15 +50,32 @@ Examples:
   tokmeter
   tokmeter usage --provider claude
   tokmeter --json
+
+  # Multi-account Claude (snapshot each login, then switch in Claude Code):
+  tokmeter save-claude personal
+  # … log into second account in Claude Code …
+  tokmeter save-claude work
+  tokmeter accounts remove claude-default   # optional: drop ambient keychain slot
+  tokmeter
+
   tokmeter accounts add --provider codex --label work --codex-home ~/.codex-work
 `);
 }
 
-function parseArgs(argv: string[]): {
-  command: "usage" | "accounts-list" | "accounts-add" | "accounts-remove" | "help";
+type Parsed = {
+  command:
+    | "usage"
+    | "accounts-list"
+    | "accounts-add"
+    | "accounts-remove"
+    | "save-claude"
+    | "save-claude-list"
+    | "help";
   provider?: ProviderName;
   json: boolean;
   removeId?: string;
+  saveLabel?: string;
+  noAdd?: boolean;
   add?: {
     provider?: ProviderName;
     label?: string;
@@ -56,22 +85,17 @@ function parseArgs(argv: string[]): {
     keychainService?: string;
     id?: string;
   };
-} {
+};
+
+function parseArgs(argv: string[]): Parsed {
   const args = [...argv];
-  let command: "usage" | "accounts-list" | "accounts-add" | "accounts-remove" | "help" =
-    "usage";
+  let command: Parsed["command"] = "usage";
   let provider: ProviderName | undefined;
   let json = false;
   let removeId: string | undefined;
-  const add: {
-    provider?: ProviderName;
-    label?: string;
-    credentialsPath?: string;
-    codexHome?: string;
-    grokHome?: string;
-    keychainService?: string;
-    id?: string;
-  } = {};
+  let saveLabel: string | undefined;
+  let noAdd = false;
+  const add: NonNullable<Parsed["add"]> = {};
 
   if (args.length === 0) {
     return { command: "usage", json: false };
@@ -92,13 +116,35 @@ function parseArgs(argv: string[]): {
     } else {
       command = "help";
     }
+  } else if (first === "save-claude") {
+    args.shift();
+    const sub = args.shift();
+    if (!sub || sub === "list" || sub === "--list") {
+      command = "save-claude-list";
+    } else if (sub === "help" || sub === "--help" || sub === "-h") {
+      command = "help";
+    } else {
+      command = "save-claude";
+      saveLabel = sub;
+    }
+  } else if (first === "claude") {
+    // Friendly alias group: `tokmeter claude save personal`
+    args.shift();
+    const sub = args.shift();
+    if (sub === "save" || sub === "capture") {
+      command = "save-claude";
+      saveLabel = args.shift();
+    } else if (sub === "list") {
+      command = "save-claude-list";
+    } else if (sub === "help" || sub === "--help" || sub === "-h" || !sub) {
+      command = "help";
+    } else {
+      // `tokmeter claude personal` → treat as save
+      command = "save-claude";
+      saveLabel = sub;
+    }
   } else if (first === "help" || first === "--help" || first === "-h") {
     return { command: "help", json: false };
-  } else if (!first.startsWith("-")) {
-    // unknown top-level → help
-    if (first !== "usage") {
-      // allow flags only at top level for default usage
-    }
   }
 
   while (args.length > 0) {
@@ -107,6 +153,8 @@ function parseArgs(argv: string[]): {
       json = true;
     } else if (a === "--help" || a === "-h") {
       command = "help";
+    } else if (a === "--no-add") {
+      noAdd = true;
     } else if (a === "--provider" || a === "-p") {
       const v = args.shift();
       if (!v || !PROVIDERS.includes(v as ProviderName)) {
@@ -130,12 +178,14 @@ function parseArgs(argv: string[]): {
       throw new Error(`Unknown flag: ${a}`);
     } else if (command === "accounts-remove" && !removeId) {
       removeId = a;
+    } else if (command === "save-claude" && !saveLabel) {
+      saveLabel = a;
     } else {
       throw new Error(`Unexpected argument: ${a}`);
     }
   }
 
-  return { command, provider, json, removeId, add };
+  return { command, provider, json, removeId, saveLabel, noAdd, add };
 }
 
 async function cmdUsage(
@@ -180,31 +230,20 @@ async function cmdAccountsList(json: boolean): Promise<number> {
     }
     console.log("Accounts:");
     for (const a of accounts) {
-      const bits = [
-        a.id,
-        a.provider,
-        a.label,
-        a.source ?? "auto",
-      ];
+      const bits = [a.id, a.provider, a.label, a.source ?? "auto"];
       if (a.credentialsPath) bits.push(`creds=${a.credentialsPath}`);
       if (a.codexHome) bits.push(`codexHome=${a.codexHome}`);
       if (a.grokHome) bits.push(`grokHome=${a.grokHome}`);
       console.log(`  ${bits.join("  ·  ")}`);
     }
-    console.log(`\nConfig: ~/.config/tokmeter/config.json (auto-discover if missing)`);
+    console.log(
+      `\nConfig: ~/.config/tokmeter/config.json (auto-discover if missing)`,
+    );
   }
   return 0;
 }
 
-async function cmdAccountsAdd(add: {
-  provider?: ProviderName;
-  label?: string;
-  credentialsPath?: string;
-  codexHome?: string;
-  grokHome?: string;
-  keychainService?: string;
-  id?: string;
-}): Promise<number> {
+async function cmdAccountsAdd(add: NonNullable<Parsed["add"]>): Promise<number> {
   if (!add.provider || !PROVIDERS.includes(add.provider)) {
     console.error("accounts add requires --provider claude|codex|grok");
     return 1;
@@ -213,7 +252,6 @@ async function cmdAccountsAdd(add: {
     console.error("accounts add requires --label <name>");
     return 1;
   }
-  // Materialize current discovery into config before adding
   const cfg = await loadConfig();
   const { saveConfig } = await import("./config.js");
   await saveConfig(cfg);
@@ -236,7 +274,6 @@ async function cmdAccountsRemove(id: string | undefined): Promise<number> {
     console.error("accounts remove requires <id>");
     return 1;
   }
-  // Persist discovered accounts first so remove has something stable
   const cfg = await loadConfig();
   const { saveConfig } = await import("./config.js");
   await saveConfig(cfg);
@@ -250,8 +287,91 @@ async function cmdAccountsRemove(id: string | undefined): Promise<number> {
   return 0;
 }
 
+async function cmdSaveClaude(
+  label: string | undefined,
+  opts: { noAdd?: boolean; json?: boolean },
+): Promise<number> {
+  if (!label) {
+    console.error("Usage: tokmeter save-claude <label> [--no-add]");
+    console.error("   or: tokmeter claude save <label>");
+    return 1;
+  }
+  try {
+    const result = await captureClaudeAccount({
+      label,
+      register: !opts.noAdd,
+    });
+    if (opts.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+    const action = result.replaced ? "Updated" : "Saved";
+    console.log(
+      `${action} Claude login as “${result.label}” (${result.plan})`,
+    );
+    console.log(`  file   ${result.path}`);
+    console.log(`  from   ${result.source}`);
+    if (result.registered) {
+      console.log(
+        `  account ${result.accountId}${result.replaced ? " (replaced)" : " (registered)"}`,
+      );
+    } else {
+      console.log(
+        `  (not registered — run without --no-add, or: tokmeter accounts add --provider claude --label ${result.label} --credentials-path ${result.path})`,
+      );
+    }
+
+    // Helpful multi-account tip
+    const accounts = await listAccounts();
+    const hasAmbient = accounts.some(
+      (a) =>
+        a.provider === "claude" &&
+        a.id === "claude-default" &&
+        (a.source === "auto" || !a.credentialsPath),
+    );
+    const capturedCount = accounts.filter(
+      (a) => a.provider === "claude" && a.credentialsPath,
+    ).length;
+    if (hasAmbient && capturedCount >= 1) {
+      console.log(
+        `\nTip: ambient keychain account “claude-default” is still listed.`,
+      );
+      console.log(
+        `     After capturing both logins: tokmeter accounts remove claude-default`,
+      );
+    }
+    if (capturedCount === 1 && !hasAmbient) {
+      console.log(
+        `\nNext: log into the other Claude account, then: tokmeter save-claude <other-label>`,
+      );
+    }
+    return 0;
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    return 1;
+  }
+}
+
+async function cmdSaveClaudeList(json: boolean): Promise<number> {
+  const slots = await listCapturedClaudeAccounts();
+  if (json) {
+    process.stdout.write(`${JSON.stringify({ slots }, null, 2)}\n`);
+    return 0;
+  }
+  if (slots.length === 0) {
+    console.log("No captured Claude logins yet.");
+    console.log("  tokmeter save-claude personal");
+    return 0;
+  }
+  console.log("Captured Claude credentials:");
+  for (const s of slots) {
+    console.log(`  ${s.label}  ·  ${s.path}`);
+  }
+  return 0;
+}
+
 async function main(): Promise<void> {
-  let parsed;
+  let parsed: Parsed;
   try {
     parsed = parseArgs(process.argv.slice(2));
   } catch (e) {
@@ -277,6 +397,15 @@ async function main(): Promise<void> {
       break;
     case "accounts-remove":
       code = await cmdAccountsRemove(parsed.removeId);
+      break;
+    case "save-claude":
+      code = await cmdSaveClaude(parsed.saveLabel, {
+        noAdd: parsed.noAdd,
+        json: parsed.json,
+      });
+      break;
+    case "save-claude-list":
+      code = await cmdSaveClaudeList(parsed.json);
       break;
   }
   process.exitCode = code;

@@ -98,14 +98,45 @@ Path: `~/.config/tokmeter/config.json`
 
 If missing, tokmeter **auto-discovers** one default account per provider from standard locations.
 
+### Claude: capture current login (recommended)
+
+Claude Code only keeps one live session in the macOS keychain. Snapshot each account under a label:
+
+```bash
+# while logged into account A
+tokmeter save-claude personal
+
+# switch in Claude Code (/logout → login as B), then:
+tokmeter save-claude work
+
+# optional: drop the ambient auto-discovered keychain slot so only snapshots show
+tokmeter accounts remove claude-default
+
+tokmeter                          # both Claude cards
+tokmeter save-claude list         # files under ~/.config/tokmeter/claude-creds/
+```
+
+Aliases: `tokmeter claude save personal`, `tokmeter claude list`.
+
+What it does:
+
+1. Reads the current Claude Code login (keychain on macOS, else `~/.claude/.credentials.json`)
+2. Writes `~/.config/tokmeter/claude-creds/<label>.json` (mode `0600`)
+3. Registers/updates account `claude-<label>` in config (skip with `--no-add`)
+
+Re-run `save-claude <label>` anytime to refresh that slot after re-login.
+
+### Manual / other providers
+
 ```json
 {
   "accounts": [
     {
-      "id": "claude-default",
+      "id": "claude-personal",
       "provider": "claude",
       "label": "personal",
-      "source": "auto"
+      "source": "credentials_file",
+      "credentialsPath": "/Users/you/.config/tokmeter/claude-creds/personal.json"
     },
     {
       "id": "codex-work",
@@ -116,6 +147,12 @@ If missing, tokmeter **auto-discovers** one default account per provider from st
     }
   ]
 }
+```
+
+```bash
+tokmeter accounts add --provider codex --label work --codex-home ~/.codex-work
+tokmeter accounts add --provider claude --label work \
+  --credentials-path ~/.config/tokmeter/claude-creds/work.json
 ```
 
 Optional fields per account:

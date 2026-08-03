@@ -135,8 +135,32 @@ async function writeKeychain(
 
 async function loadCredentials(account: AccountConfig): Promise<CredStore> {
   const service = account.keychainService ?? defaultClaudeKeychainService();
-  const source = account.source ?? "auto";
+  // Prefer explicit overrides over ambient "auto" discovery.
+  // A credentialsPath / non-default keychain service means a dedicated account slot.
+  const hasExplicitFile = Boolean(account.credentialsPath);
+  const hasExplicitKeychain =
+    Boolean(account.keychainService) &&
+    account.keychainService !== defaultClaudeKeychainService();
+  const source =
+    account.source ??
+    (hasExplicitFile
+      ? "credentials_file"
+      : hasExplicitKeychain
+        ? "keychain"
+        : "auto");
   const filePath = account.credentialsPath ?? defaultClaudeCredentialsPath();
+
+  // Explicit credentials file → never fall back to ambient keychain
+  // (that would merge every Claude account into the currently logged-in one).
+  if (source === "credentials_file" || source === "auth_file") {
+    if (await pathExists(filePath)) {
+      const data = await readJsonFile<ClaudeCredentials>(filePath);
+      if (data?.claudeAiOauth?.accessToken) {
+        return { kind: "file", path: filePath, data };
+      }
+    }
+    throw new Error(`Claude credentials file missing or invalid: ${filePath}`);
+  }
 
   if (source === "keychain" || source === "auto") {
     const kc = await readKeychain(service);
@@ -149,26 +173,21 @@ async function loadCredentials(account: AccountConfig): Promise<CredStore> {
       };
     }
     if (source === "keychain") {
-      throw new Error(
-        `Claude keychain service not found: ${service}`,
-      );
+      throw new Error(`Claude keychain service not found: ${service}`);
     }
   }
 
-  if (source === "credentials_file" || source === "auto" || source === "auth_file") {
+  if (source === "auto") {
     if (await pathExists(filePath)) {
       const data = await readJsonFile<ClaudeCredentials>(filePath);
       if (data?.claudeAiOauth?.accessToken) {
         return { kind: "file", path: filePath, data };
       }
     }
-    if (source === "credentials_file" || source === "auth_file") {
-      throw new Error(`Claude credentials file missing or invalid: ${filePath}`);
-    }
   }
 
   throw new Error(
-    "No Claude credentials found (keychain or ~/.claude/.credentials.json)",
+    "No Claude credentials found (keychain or credentials file)",
   );
 }
 
