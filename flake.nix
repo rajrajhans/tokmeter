@@ -14,11 +14,11 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            # Add project-specific tools here as needed
+            nodejs_22
           ];
 
           shellHook = ''
-            echo "tokmeter dev shell ready"
+            echo "tokmeter dev shell ready (node $(node --version))"
           '';
         };
       }
