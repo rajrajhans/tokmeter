@@ -4,6 +4,10 @@ import {
   listCapturedClaudeAccounts,
 } from "./claude-capture.js";
 import {
+  claudeActiveStatus,
+  useClaudeAccount,
+} from "./claude-switch.js";
+import {
   addAccount,
   filterAccounts,
   listAccounts,
@@ -21,44 +25,32 @@ function printHelp(): void {
 
 Usage:
   tokmeter [usage] [--provider <name>] [--json]
-  tokmeter accounts list
-  tokmeter accounts add --provider <name> --label <label> [options]
-  tokmeter accounts remove <id>
+  tokmeter accounts list|add|remove …
 
+  # Capture Claude logins (for metering + switching)
   tokmeter save-claude <label> [--no-add]
   tokmeter save-claude list
-  tokmeter claude save <label> [--no-add]     # alias of save-claude
-  tokmeter claude list                        # alias of save-claude list
+
+  # Switch Claude Code's active account (uses captured slots)
+  tokmeter use-claude <label>
+  tokmeter claude use <label>
+  tokmeter claude switch <label>
+  tokmeter claude status
 
   tokmeter --help
 
-Options:
-  --provider, -p   claude | codex | grok
-  --json           machine-readable output
-  --help, -h       show this help
-  --no-add         with save-claude: only write the credentials file
-                   (skip registering in tokmeter config)
-
-accounts add options:
-  --credentials-path <path>   Claude credentials JSON
-  --codex-home <path>         Codex home (contains auth.json)
-  --grok-home <path>          Grok home (contains auth.json)
-  --keychain-service <name>   Claude macOS keychain service
-  --id <id>                   optional account id
+Claude multi-account:
+  1. tokmeter save-claude max          # while logged into Max
+  2. switch in Claude Code, then:
+     tokmeter save-claude pro
+  3. tokmeter use-claude max           # no browser — swaps keychain
+  4. tokmeter use-claude pro
 
 Examples:
   tokmeter
-  tokmeter usage --provider claude
-  tokmeter --json
-
-  # Multi-account Claude (snapshot each login, then switch in Claude Code):
-  tokmeter save-claude personal
-  # … log into second account in Claude Code …
-  tokmeter save-claude work
-  tokmeter accounts remove claude-default   # optional: drop ambient keychain slot
-  tokmeter
-
-  tokmeter accounts add --provider codex --label work --codex-home ~/.codex-work
+  tokmeter --provider claude --json
+  tokmeter claude status
+  tokmeter use-claude max
 `);
 }
 
@@ -70,11 +62,14 @@ type Parsed = {
     | "accounts-remove"
     | "save-claude"
     | "save-claude-list"
+    | "use-claude"
+    | "claude-status"
     | "help";
   provider?: ProviderName;
   json: boolean;
   removeId?: string;
   saveLabel?: string;
+  useLabel?: string;
   noAdd?: boolean;
   add?: {
     provider?: ProviderName;
@@ -94,6 +89,7 @@ function parseArgs(argv: string[]): Parsed {
   let json = false;
   let removeId: string | undefined;
   let saveLabel: string | undefined;
+  let useLabel: string | undefined;
   let noAdd = false;
   const add: NonNullable<Parsed["add"]> = {};
 
@@ -127,8 +123,11 @@ function parseArgs(argv: string[]): Parsed {
       command = "save-claude";
       saveLabel = sub;
     }
+  } else if (first === "use-claude") {
+    args.shift();
+    command = "use-claude";
+    useLabel = args.shift();
   } else if (first === "claude") {
-    // Friendly alias group: `tokmeter claude save personal`
     args.shift();
     const sub = args.shift();
     if (sub === "save" || sub === "capture") {
@@ -136,10 +135,15 @@ function parseArgs(argv: string[]): Parsed {
       saveLabel = args.shift();
     } else if (sub === "list") {
       command = "save-claude-list";
+    } else if (sub === "use" || sub === "switch") {
+      command = "use-claude";
+      useLabel = args.shift();
+    } else if (sub === "status") {
+      command = "claude-status";
     } else if (sub === "help" || sub === "--help" || sub === "-h" || !sub) {
       command = "help";
     } else {
-      // `tokmeter claude personal` → treat as save
+      // bare label → save (legacy)
       command = "save-claude";
       saveLabel = sub;
     }
@@ -180,12 +184,23 @@ function parseArgs(argv: string[]): Parsed {
       removeId = a;
     } else if (command === "save-claude" && !saveLabel) {
       saveLabel = a;
+    } else if (command === "use-claude" && !useLabel) {
+      useLabel = a;
     } else {
       throw new Error(`Unexpected argument: ${a}`);
     }
   }
 
-  return { command, provider, json, removeId, saveLabel, noAdd, add };
+  return {
+    command,
+    provider,
+    json,
+    removeId,
+    saveLabel,
+    useLabel,
+    noAdd,
+    add,
+  };
 }
 
 async function cmdUsage(
@@ -293,7 +308,6 @@ async function cmdSaveClaude(
 ): Promise<number> {
   if (!label) {
     console.error("Usage: tokmeter save-claude <label> [--no-add]");
-    console.error("   or: tokmeter claude save <label>");
     return 1;
   }
   try {
@@ -315,22 +329,12 @@ async function cmdSaveClaude(
       console.log(
         `  account ${result.accountId}${result.replaced ? " (replaced)" : " (registered)"}`,
       );
-      console.log(`  (ambient claude-default removed if it was present)`);
-    } else {
-      console.log(
-        `  (not registered — run without --no-add, or: tokmeter accounts add --provider claude --label ${result.label} --credentials-path ${result.path})`,
-      );
     }
-
     if (result.duplicateOf) {
       console.log(
         `\nNote: this login looks identical to captured slot “${result.duplicateOf}”.`,
       );
-      console.log(
-        `      You may have captured the same Claude account twice under different labels.`,
-      );
     }
-
     const accounts = await listAccounts();
     const capturedCount = accounts.filter(
       (a) => a.provider === "claude" && a.credentialsPath,
@@ -338,6 +342,9 @@ async function cmdSaveClaude(
     if (capturedCount === 1) {
       console.log(
         `\nNext: log into the other Claude account, then: tokmeter save-claude <other-label>`,
+      );
+      console.log(
+        `     Switch later with: tokmeter use-claude ${result.label}`,
       );
     }
     return 0;
@@ -355,14 +362,83 @@ async function cmdSaveClaudeList(json: boolean): Promise<number> {
   }
   if (slots.length === 0) {
     console.log("No captured Claude logins yet.");
-    console.log("  tokmeter save-claude personal");
+    console.log("  tokmeter save-claude <label>");
     return 0;
   }
   console.log("Captured Claude credentials:");
   for (const s of slots) {
     console.log(`  ${s.label}  ·  ${s.path}`);
   }
+  console.log(`\nActivate one: tokmeter use-claude <label>`);
   return 0;
+}
+
+async function cmdUseClaude(
+  label: string | undefined,
+  json: boolean,
+): Promise<number> {
+  if (!label) {
+    console.error("Usage: tokmeter use-claude <label>");
+    console.error("   or: tokmeter claude switch <label>");
+    const slots = await listCapturedClaudeAccounts();
+    if (slots.length) {
+      console.error(`Captured: ${slots.map((s) => s.label).join(", ")}`);
+    }
+    return 1;
+  }
+  try {
+    const result = await useClaudeAccount(label);
+    if (json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+    console.log(`Active Claude Code login → “${result.label}” (${result.plan})`);
+    console.log(`  from   ${result.path}`);
+    if (result.wroteKeychain) console.log(`  wrote  keychain “Claude Code-credentials”`);
+    if (result.wroteFile) console.log(`  wrote  ~/.claude/.credentials.json`);
+    if (result.preservedSharedKeys.length) {
+      console.log(
+        `  kept   live shared fields: ${result.preservedSharedKeys.join(", ")}`,
+      );
+    }
+    if (result.note) console.log(`\n${result.note}`);
+    return 0;
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    return 1;
+  }
+}
+
+async function cmdClaudeStatus(json: boolean): Promise<number> {
+  try {
+    const status = await claudeActiveStatus();
+    if (json) {
+      process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+      return 0;
+    }
+    if (!status.source) {
+      console.log("No active Claude credentials found (keychain / ~/.claude).");
+    } else {
+      console.log(
+        `Active Claude: ${status.activeLabel ? `“${status.activeLabel}”` : "(not a captured slot)"}` +
+          (status.plan ? ` · ${status.plan}` : ""),
+      );
+      console.log(`  source ${status.source}`);
+    }
+    if (status.matches.length) {
+      console.log("\nCaptured slots:");
+      for (const m of status.matches) {
+        const mark = m.active ? "●" : "○";
+        console.log(`  ${mark} ${m.label}  ·  ${m.plan}`);
+      }
+    } else {
+      console.log("\nNo captured slots. tokmeter save-claude <label>");
+    }
+    return 0;
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    return 1;
+  }
 }
 
 async function main(): Promise<void> {
@@ -401,6 +477,12 @@ async function main(): Promise<void> {
       break;
     case "save-claude-list":
       code = await cmdSaveClaudeList(parsed.json);
+      break;
+    case "use-claude":
+      code = await cmdUseClaude(parsed.useLabel, parsed.json);
+      break;
+    case "claude-status":
+      code = await cmdClaudeStatus(parsed.json);
       break;
   }
   process.exitCode = code;

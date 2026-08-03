@@ -35,8 +35,7 @@ nix profile install .              # install to PATH
 direnv allow                       # or: nix develop → live `tokmeter` from src/
 
 # npm
-npm install && npm run build
-npm start                          # or: npx tsx src/index.ts
+npm install && npm run build && npm start
 ```
 
 ## Usage
@@ -48,28 +47,29 @@ tokmeter --json
 tokmeter accounts list
 ```
 
-### Multiple Claude accounts
+### Claude multi-account (meter + switch)
 
-Claude Code only keeps one live login. Snapshot each:
+Claude Code only keeps one live login. Snapshot each account, then switch without `/login`:
 
 ```bash
 tokmeter save-claude max           # while logged into Max
-# switch account in Claude Code
-tokmeter save-claude pro           # while logged into Pro
-tokmeter
+# switch account in Claude Code once, then:
+tokmeter save-claude pro
+
+tokmeter use-claude max            # activate Max (keychain swap)
+tokmeter use-claude pro            # activate Pro
+tokmeter claude status             # which slot is live
 ```
 
-```bash
-tokmeter save-claude list          # ~/.config/tokmeter/claude-creds/
-tokmeter claude save work          # alias
-```
+Aliases: `tokmeter claude switch max`, `tokmeter claude use pro`, `tokmeter claude list`.
+
+Switching writes the captured OAuth blob into Claude Code’s store and keeps live machine-shared fields (`mcpOAuth`, …) so MCP logins survive. On macOS, a running Claude session may take ~30s to notice (keychain cache); new processes pick it up immediately.
 
 ### Other multi-account
 
 ```bash
 tokmeter accounts add --provider codex --label work --codex-home ~/.codex-work
 tokmeter accounts add --provider grok  --label work --grok-home  ~/.grok-work
-tokmeter accounts remove codex-work
 ```
 
 Config: `~/.config/tokmeter/config.json` (auto-discovers defaults if missing).
