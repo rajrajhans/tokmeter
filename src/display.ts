@@ -120,7 +120,14 @@ function renderSnapshot(s: ProviderSnapshot): string[] {
     lines.push(renderWindowLine(w));
   }
   if (s.extras?.warning) {
-    lines.push(`│  ${colors.yellow("warning")}  ${dim(String(s.extras.warning))}`);
+    lines.push(
+      `│  ${colors.yellow("note")}  ${dim(String(s.extras.warning))}`,
+    );
+  }
+  if (s.extras?.rehydrated) {
+    lines.push(
+      `│  ${dim(`refreshed slot from live Claude Code (${String(s.extras.rehydratedPlan ?? "")})`)}`,
+    );
   }
   lines.push("│");
   return lines;
