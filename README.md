@@ -33,24 +33,48 @@ Each coding agent stores credentials and exposes usage differently:
 
 tokmeter normalizes these into one view so you can see rate-limit headroom before starting work.
 
-## Install / run
+## Install / run (Nix flake)
 
-System deps come from the Nix flake (Node 22). Project packages install locally via npm.
+### Dev (live sources against this checkout)
 
 ```bash
 cd tokmeter
-# if using direnv/nix:
-direnv allow   # or: nix develop
+direnv allow          # or: nix develop
+# if you still see /nix/store/... EACCES:  direnv reload
 
+tokmeter              # rebuilds src/ via esbuild → runs it (no npm)
+tokmeter --json
+tokmeter accounts list
+```
+
+The dev shell puts a `tokmeter` wrapper on `PATH` that:
+
+1. Finds your **writable git checkout** (never `/nix/store/...-source`)
+2. Bundles `src/` with **esbuild** into `~/.cache/tokmeter-dev/`
+3. Runs that bundle with node
+
+**No `npm install` is required** for the flake/dev path. (npm is only if you choose to use `npx tsx` outside Nix.)
+
+### Release binary from this flake
+
+```bash
+# one-shot, no install
+nix run .
+
+# install into your profile (then `tokmeter` anywhere)
+nix profile install .
+
+# build store path only
+nix build .
+./result/bin/tokmeter
+```
+
+### Without Nix
+
+```bash
 npm install
 npx tsx src/index.ts          # dev
 npm run build && npm start    # compiled
-```
-
-Link the binary locally if you want `tokmeter` on your PATH inside the project:
-
-```bash
-npm link   # from this directory, with node available
 ```
 
 ## Usage
