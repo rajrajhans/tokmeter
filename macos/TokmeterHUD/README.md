@@ -6,7 +6,8 @@ Normal macOS **window** app for [`tokmeter`](../../README.md) — move it, resiz
 - Appears in the Dock and Cmd-Tab
 - Auto-refresh via `tokmeter --json` (default 30s)
 - Optional **Keep on Top**
-- Compact dark UI for Claude / Codex / Grok usage
+- Glanceable dark UI: donut rings + thick full-width bars
+- Shows plan quotas only (no identity noise, off credits, or local-stats walls)
 - Zero external SPM dependencies · macOS 13+
 
 ## Run

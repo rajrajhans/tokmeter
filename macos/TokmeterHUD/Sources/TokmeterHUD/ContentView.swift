@@ -85,20 +85,34 @@ struct ContentView: View {
     @AppStorage(HUDPreferences.refreshIntervalKey) private var refreshIntervalSeconds =
         HUDPreferences.defaultInterval
 
+    /// Accounts that have something glanceable (or an error worth showing).
+    private var visibleAccounts: [AccountSnapshot] {
+        model.accounts.filter { acc in
+            !acc.ok || !acc.glanceWindows.isEmpty
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().opacity(0.35)
+            Divider().opacity(0.25)
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 18) {
                     if let globalError = model.globalError, model.accounts.isEmpty {
                         errorBanner(globalError)
                     } else if model.accounts.isEmpty, !model.isLoading {
                         emptyState
                     } else {
-                        ForEach(model.accounts) { account in
-                            AccountBlock(account: account)
+                        // Layer 1 — extreme glance: donut rings
+                        if !okAccountsWithPercent.isEmpty {
+                            DonutOverview(accounts: okAccountsWithPercent)
                         }
+
+                        // Layer 2 — thick bars per account
+                        ForEach(visibleAccounts) { account in
+                            AccountCard(account: account)
+                        }
+
                         if let globalError = model.globalError {
                             Text(globalError)
                                 .font(.system(size: 11))
@@ -108,13 +122,13 @@ struct ContentView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(minWidth: 340, idealWidth: 420, maxWidth: .infinity,
-               minHeight: 240, idealHeight: 520, maxHeight: .infinity)
-        .background(Color(red: 0.09, green: 0.09, blue: 0.11))
+        .frame(minWidth: 360, idealWidth: 440, maxWidth: .infinity,
+               minHeight: 280, idealHeight: 560, maxHeight: .infinity)
+        .background(Color(red: 0.07, green: 0.07, blue: 0.09))
         .preferredColorScheme(.dark)
         .background(WindowConfigurator(keepOnTop: keepOnTop))
         .onAppear {
@@ -128,11 +142,17 @@ struct ContentView: View {
         }
     }
 
+    private var okAccountsWithPercent: [AccountSnapshot] {
+        visibleAccounts.filter { $0.ok && $0.primaryPercent != nil }
+    }
+
+    // MARK: Header
+
     private var header: some View {
         HStack(spacing: 10) {
             Text("tokmeter")
-                .font(.system(size: 14, weight: .semibold, design: .rounded))
-                .foregroundStyle(Color.white.opacity(0.92))
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.88))
 
             Spacer(minLength: 8)
 
@@ -150,14 +170,14 @@ struct ContentView: View {
                     )
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.white.opacity(0.75))
+            .foregroundStyle(Color.white.opacity(0.7))
             .help("Refresh now")
             .disabled(model.isLoading)
             .keyboardShortcut("r", modifiers: [.command])
 
             Text(model.fetchedAt.map { Formatters.headerTime($0) } ?? "—")
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(Color.white.opacity(0.45))
+                .foregroundStyle(Color.white.opacity(0.4))
                 .help("Last updated")
 
             Menu {
@@ -192,11 +212,11 @@ struct ContentView: View {
             }
             .menuStyle(.borderlessButton)
             .frame(width: 24)
-            .foregroundStyle(Color.white.opacity(0.7))
+            .foregroundStyle(Color.white.opacity(0.65))
             .help("Settings")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 9)
     }
 
     private var emptyState: some View {
@@ -227,17 +247,106 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Account + window rows
+// MARK: - Donut overview (layer 1)
 
-struct AccountBlock: View {
+/// Row of provider rings — worst/highest limit per account. Pure glance layer.
+struct DonutOverview: View {
+    let accounts: [AccountSnapshot]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("AT A GLANCE")
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.white.opacity(0.35))
+                .tracking(0.8)
+
+            // Wrap when many accounts; stay one row when it fits.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 14) {
+                    ForEach(accounts) { acc in
+                        DonutCell(account: acc)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(accounts) { acc in
+                            DonutCell(account: acc)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.bottom, 4)
+    }
+}
+
+struct DonutCell: View {
+    let account: AccountSnapshot
+
+    private var pct: Double {
+        account.primaryPercent ?? 0
+    }
+
+    private var metricLabel: String {
+        account.primaryWindow?.shortLabel ?? "—"
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            UsageDonut(
+                percent: pct,
+                size: 68,
+                lineWidth: 7,
+                accent: UsageColor.provider(account.provider),
+                centerLabel: account.displayTitle
+            )
+
+            VStack(spacing: 1) {
+                Text(account.providerName)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.85))
+                if !account.shortTag.isEmpty {
+                    Text(account.shortTag)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(UsageColor.provider(account.provider).opacity(0.9))
+                }
+                Text(metricLabel)
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.35))
+            }
+            .lineLimit(1)
+        }
+        .frame(minWidth: 72)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Account card (layer 2)
+
+struct AccountCard: View {
     let account: AccountSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(account.displayTitle)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.white.opacity(0.92))
-                .lineLimit(2)
+        VStack(alignment: .leading, spacing: 10) {
+            // Header row
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(UsageColor.provider(account.provider))
+                    .frame(width: 7, height: 7)
+                Text(account.displayTitle)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.9))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if account.ok, let pct = account.primaryPercent {
+                    Text(Formatters.percent(pct))
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundStyle(UsageColor.forPercent(pct))
+                        .monospacedDigit()
+                }
+            }
 
             if !account.ok {
                 HStack(alignment: .top, spacing: 6) {
@@ -250,84 +359,72 @@ struct AccountBlock: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                ForEach(account.windows.filter { win in
-                    // Prefer rich local stats over coarse Grok "Local sessions" row
-                    !(account.provider == "grok"
-                        && win.id == "local"
-                        && account.local != nil
-                        && !(account.local?.lines.isEmpty ?? true))
-                }) { window in
-                    WindowRow(window: window)
-                }
-            }
-
-            if let local = account.local, !local.lines.isEmpty {
-                ForEach(local.lines) { line in
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(line.label)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.white.opacity(0.45))
-                            .frame(width: 100, alignment: .leading)
-                        Text(line.value)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Color.cyan.opacity(0.9))
-                            .lineLimit(2)
-                        Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(account.glanceWindows) { window in
+                        QuotaBarRow(window: window)
                     }
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.035))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+        )
     }
 }
 
-struct WindowRow: View {
+// MARK: - Thick bar row
+
+struct QuotaBarRow: View {
     let window: UsageWindow
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 8) {
-                label
-                    .frame(width: 120, alignment: .leading)
-                metricsRow
+        if window.showsProgressBar, let pct = window.usedPercent {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(window.shortLabel)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(Color.white.opacity(0.5))
+                        .frame(width: 64, alignment: .leading)
+
+                    Spacer(minLength: 4)
+
+                    Text(Formatters.percent(pct))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(UsageColor.forPercent(pct))
+                        .monospacedDigit()
+                        .frame(minWidth: 36, alignment: .trailing)
+
+                    if let reset = Formatters.resetLabel(
+                        resetsAt: window.resetsAt,
+                        resetsInSeconds: window.resetsInSeconds
+                    ) {
+                        Text(reset)
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.32))
+                            .frame(minWidth: 44, alignment: .trailing)
+                    }
+                }
+
+                StackBar(percent: pct, height: 12)
+            }
+        } else if let text = window.secondaryText {
+            // Rare: unlimited credits etc.
+            HStack(spacing: 8) {
+                Text(window.shortLabel)
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .frame(width: 64, alignment: .leading)
+                Text(text)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Color.cyan.opacity(0.85))
                 Spacer(minLength: 0)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                label
-                metricsRow
-            }
-        }
-    }
-
-    private var label: some View {
-        Text(window.label)
-            .font(.system(size: 12))
-            .foregroundStyle(Color.white.opacity(0.55))
-            .lineLimit(1)
-    }
-
-    @ViewBuilder
-    private var metricsRow: some View {
-        if window.showsProgressBar, let pct = window.usedPercent {
-            ProgressBar(percent: pct, height: 6, width: 80)
-            Text(Formatters.percent(pct))
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
-                .foregroundStyle(percentColor(pct))
-                .frame(width: 36, alignment: .trailing)
-            if let reset = Formatters.resetLabel(
-                resetsAt: window.resetsAt,
-                resetsInSeconds: window.resetsInSeconds
-            ) {
-                Text(reset)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.white.opacity(0.38))
-                    .lineLimit(1)
-            }
-        } else {
-            Text(window.secondaryText ?? "—")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.white.opacity(0.45))
-                .lineLimit(2)
         }
     }
 }
@@ -355,11 +452,11 @@ struct WindowConfigurator: NSViewRepresentable {
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
         window.isMovableByWindowBackground = true
-        window.backgroundColor = NSColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1)
+        window.backgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 1)
         window.styleMask.insert([.titled, .closable, .miniaturizable, .resizable])
-        window.setContentSize(NSSize(width: max(window.frame.width, 360),
-                                     height: max(window.frame.height, 280)))
-        window.minSize = NSSize(width: 340, height: 220)
+        window.setContentSize(NSSize(width: max(window.frame.width, 380),
+                                     height: max(window.frame.height, 300)))
+        window.minSize = NSSize(width: 360, height: 260)
 
         if keepOnTop {
             window.level = .floating

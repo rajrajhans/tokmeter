@@ -9,7 +9,7 @@ struct TokmeterHUDApp: App {
         WindowGroup("tokmeter") {
             ContentView()
         }
-        .defaultSize(width: 420, height: 520)
+        .defaultSize(width: 440, height: 560)
         .commands {
             CommandGroup(replacing: .newItem) {}
         }

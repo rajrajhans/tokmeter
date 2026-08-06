@@ -36,21 +36,47 @@ struct AccountSnapshot: Codable, Identifiable, Sendable {
 
     var id: String { accountId }
 
+    /// Short provider name for badges / donut captions.
+    var providerName: String {
+        switch provider.lowercased() {
+        case "claude": return "Claude"
+        case "codex": return "Codex"
+        case "grok": return "Grok"
+        default: return provider.capitalized
+        }
+    }
+
+    /// Compact account tag: "max", "pro", "personal" — empty when redundant.
+    var shortTag: String {
+        if !label.isEmpty { return label }
+        if let plan, !plan.isEmpty { return plan }
+        return ""
+    }
+
     /// Human title: "Claude · max · Max 20x" (never email).
     var displayTitle: String {
-        let name: String
-        switch provider.lowercased() {
-        case "claude": name = "Claude"
-        case "codex": name = "Codex"
-        case "grok": name = "Grok"
-        default: name = provider.capitalized
-        }
-        var parts = [name]
+        var parts = [providerName]
         if !label.isEmpty { parts.append(label) }
         if let plan, !plan.isEmpty, plan.lowercased() != label.lowercased() {
             parts.append(plan)
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// Quota windows worth glancing at — strips identity, local noise, off/zero credits.
+    var glanceWindows: [UsageWindow] {
+        windows.filter(\.isGlanceable)
+    }
+
+    /// Highest-utilization window (the number you care about first).
+    var primaryWindow: UsageWindow? {
+        glanceWindows
+            .filter { $0.usedPercent != nil }
+            .max { ($0.usedPercent ?? -1) < ($1.usedPercent ?? -1) }
+    }
+
+    var primaryPercent: Double? {
+        primaryWindow?.usedPercent
     }
 }
 
@@ -62,7 +88,85 @@ struct UsageWindow: Codable, Identifiable, Sendable {
     var resetsInSeconds: Double?
     var extra: [String: JSONValue]?
 
-    /// Secondary text for non-bar windows (credits off, identity, local, …).
+    /// Short label for the HUD: "Session", "Weekly", "Fable", …
+    var shortLabel: String {
+        let raw = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        // "Weekly · All models" → "Weekly"
+        // "Weekly · Fable" → "Fable"
+        // "Current session" → "Session"
+        // "Primary (7d)" → "Primary"
+        // "Weekly credits" → "Weekly"
+        if raw.localizedCaseInsensitiveContains("session") {
+            return "Session"
+        }
+        if raw.localizedCaseInsensitiveContains("fable") {
+            return "Fable"
+        }
+        if raw.hasPrefix("Weekly · ") {
+            let rest = String(raw.dropFirst("Weekly · ".count))
+            if rest.localizedCaseInsensitiveContains("all") {
+                return "Weekly"
+            }
+            return rest
+        }
+        if raw.localizedCaseInsensitiveContains("weekly") {
+            return "Weekly"
+        }
+        if raw.hasPrefix("Primary") {
+            return "Primary"
+        }
+        if raw.localizedCaseInsensitiveContains("credit") {
+            return "Credits"
+        }
+        // Fall back: first token, trim parenthetical
+        let bare = raw.split(separator: "(").first.map(String.init) ?? raw
+        return bare.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Whether this window belongs on a glanceable HUD.
+    var isGlanceable: Bool {
+        // Always show real utilization bars.
+        if usedPercent != nil { return true }
+
+        switch id {
+        case "identity", "local", "billing":
+            return false
+
+        case "credits", "reset-credits":
+            // Hide "off" and zero-balance noise — only show if money/credits matter.
+            if let status = extra?["status"]?.stringValue, status == "off" {
+                return false
+            }
+            if let unlimited = extra?["unlimited"]?.boolValue, unlimited {
+                return true
+            }
+            if let bal = extra?["balance"] {
+                switch bal {
+                case .number(let n): return n > 0
+                case .string(let s):
+                    if let n = Double(s) { return n > 0 }
+                    return !s.isEmpty && s != "0"
+                default: break
+                }
+            }
+            if let avail = extra?["available"] {
+                switch avail {
+                case .number(let n): return n > 0
+                case .string(let s):
+                    if let n = Double(s) { return n > 0 }
+                    return !s.isEmpty && s != "0"
+                default: break
+                }
+            }
+            return false
+
+        default:
+            // Unknown non-percent rows are clutter in a HUD.
+            return false
+        }
+    }
+
+    /// Secondary text for non-bar windows (credits with balance, …).
     var secondaryText: String? {
         if usedPercent != nil { return nil }
 
@@ -81,29 +185,6 @@ struct UsageWindow: Codable, Identifiable, Sendable {
                 return available.displayString
             }
             return "—"
-
-        case "identity":
-            let mode = extra?["mode"]?.stringValue ?? "oidc"
-            let principal = extra?["principal"]?.stringValue ?? "User"
-            return "\(mode) · \(principal)"
-
-        case "local":
-            let sessions = extra?["sessions"]?.intValue ?? 0
-            let tokens = extra?["tokensLabel"]?.stringValue ?? "0"
-            let days = extra?["windowDays"]?.intValue ?? 30
-            return "\(sessions) sessions · ~\(tokens) tokens (\(days)d)"
-
-        case "billing":
-            if let status = extra?["status"]?.stringValue {
-                if status == "unavailable" {
-                    let note = extra?["note"]?.stringValue ?? "unavailable"
-                    return "unavailable (\(note))"
-                }
-                if status == "received" {
-                    return "received"
-                }
-            }
-            return nil
 
         default:
             break

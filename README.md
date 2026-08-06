@@ -87,7 +87,7 @@ Local lines (sessions, tokens, models, projects, …) are machine-wide per provi
 
 ## Desktop app (macOS)
 
-Normal window (move / resize / Dock) that polls `tokmeter --json`:
+Glanceable window (donut rings + thick bars) that polls `tokmeter --json` for plan quotas:
 
 ```bash
 ./scripts/tokmeter-hud

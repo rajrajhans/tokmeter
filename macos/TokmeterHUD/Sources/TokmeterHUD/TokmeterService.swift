@@ -103,7 +103,8 @@ enum TokmeterService {
         return nil
     }
 
-    /// Run `tokmeter stats --json` (detailed) with fallback to `tokmeter --json`.
+    /// Run `tokmeter --json` (quota-focused). Local activity is CLI `stats` territory —
+    /// the HUD is for glanceable plan limits only.
     static func fetch() async throws -> TokmeterPayload {
         try await Task.detached(priority: .userInitiated) {
             try runAndDecode()
@@ -114,19 +115,7 @@ enum TokmeterService {
         guard let bin = resolveBinary() else {
             throw TokmeterServiceError.binaryNotFound
         }
-
-        // Prefer detailed local stats; older installs only understand `--json`.
-        do {
-            return try runBinary(bin, arguments: ["stats", "--json"])
-        } catch let err as TokmeterServiceError {
-            if case .nonZeroExit(_, let stderr) = err,
-               stderr.localizedCaseInsensitiveContains("unexpected argument")
-                || stderr.localizedCaseInsensitiveContains("stats")
-            {
-                return try runBinary(bin, arguments: ["--json"])
-            }
-            throw err
-        }
+        return try runBinary(bin, arguments: ["--json"])
     }
 
     private static func runBinary(_ bin: String, arguments: [String]) throws -> TokmeterPayload {
