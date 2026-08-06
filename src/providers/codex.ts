@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { AccountConfig, ProviderSnapshot, UsageWindow } from "../types.js";
 import { defaultCodexHome } from "../config.js";
 import { expandHome, pathExists, readJsonFile } from "../utils/fs.js";
+import { formatFetchError } from "../utils/network.js";
 import { nowIso, secondsUntil } from "../utils/time.js";
 import type { Provider } from "./types.js";
 
@@ -206,7 +207,7 @@ export class CodexProvider implements Provider {
         accountId: account.id,
         label: account.label,
         ok: false,
-        error: e instanceof Error ? e.message : String(e),
+        error: formatFetchError(e),
         source: "auth_file",
         provenance: "unknown",
         windows: [],

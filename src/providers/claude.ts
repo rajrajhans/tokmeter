@@ -13,6 +13,7 @@ import {
   readJsonFile,
   writeJsonFile,
 } from "../utils/fs.js";
+import { formatFetchError } from "../utils/network.js";
 import { nowIso, secondsUntil } from "../utils/time.js";
 import type { Provider } from "./types.js";
 
@@ -730,7 +731,7 @@ export class ClaudeProvider implements Provider {
         accountId: account.id,
         label: account.label,
         ok: false,
-        error: e instanceof Error ? e.message : String(e),
+        error: formatFetchError(e),
         source: "oauth",
         provenance: "unknown",
         windows: [],

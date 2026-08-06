@@ -17,6 +17,10 @@ import {
 import { renderHuman, renderJson } from "./display.js";
 import { fetchAllSnapshots } from "./providers/index.js";
 import type { ProviderName } from "./types.js";
+import { configureNetwork } from "./utils/network.js";
+
+// Before any provider fetch — see utils/network.ts (Happy Eyeballs / IPv6).
+configureNetwork();
 
 const PROVIDERS: ProviderName[] = ["claude", "codex", "grok"];
 
