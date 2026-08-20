@@ -1,7 +1,7 @@
 {
   "name": "tokmeter",
   "version": "0.1.0",
-  "description": "Unified CLI for Claude Code, OpenAI Codex, and Grok usage",
+  "description": "Unified CLI for Claude Code, OpenAI Codex, Grok, and Cursor usage",
   "type": "module",
   "bin": {
     "tokmeter": "./dist/index.js"
@@ -21,6 +21,7 @@
     "claude",
     "codex",
     "grok",
+    "cursor",
     "tokens"
   ],
   "license": "MIT",

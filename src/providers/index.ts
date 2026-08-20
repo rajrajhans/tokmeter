@@ -2,6 +2,7 @@ import type { AccountConfig, ProviderName, ProviderSnapshot } from "../types.js"
 import { attachLocalStats } from "../stats/index.js";
 import { claudeProvider } from "./claude.js";
 import { codexProvider } from "./codex.js";
+import { cursorProvider } from "./cursor.js";
 import { grokProvider } from "./grok.js";
 import type { Provider } from "./types.js";
 
@@ -9,6 +10,7 @@ const providers: Record<ProviderName, Provider> = {
   claude: claudeProvider,
   codex: codexProvider,
   grok: grokProvider,
+  cursor: cursorProvider,
 };
 
 export function getProvider(name: ProviderName): Provider {
@@ -53,4 +55,4 @@ export async function fetchAllSnapshots(
   return snapshots;
 }
 
-export { claudeProvider, codexProvider, grokProvider };
+export { claudeProvider, codexProvider, cursorProvider, grokProvider };

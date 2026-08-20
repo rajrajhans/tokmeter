@@ -1,6 +1,7 @@
 import type { AccountConfig, LocalStats, ProviderName, ProviderSnapshot } from "../types.js";
 import { collectClaudeLocalStats } from "./claude-local.js";
 import { collectCodexLocalStats } from "./codex-local.js";
+import { collectCursorLocalStats } from "./cursor-local.js";
 import { collectGrokLocalStats } from "./grok-local.js";
 
 /**
@@ -25,6 +26,9 @@ export async function attachLocalStats(
         } else if (provider === "grok") {
           const home = accounts.find((a) => a.provider === "grok")?.grokHome;
           cache.set(provider, await collectGrokLocalStats(home));
+        } else if (provider === "cursor") {
+          const acct = accounts.find((a) => a.provider === "cursor");
+          cache.set(provider, await collectCursorLocalStats(acct));
         }
       } catch {
         cache.set(provider, null);

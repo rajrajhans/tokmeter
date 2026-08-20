@@ -1,4 +1,4 @@
-export type ProviderName = "claude" | "codex" | "grok";
+export type ProviderName = "claude" | "codex" | "grok" | "cursor";
 
 export type AccountSource =
   | "auto"
@@ -17,12 +17,20 @@ export type AccountConfig = {
   codexHome?: string;
   /** Override GROK_HOME for this account */
   grokHome?: string;
-  /** Override macOS keychain service name for Claude */
+  /** Override CURSOR_HOME for this account */
+  cursorHome?: string;
+  /** Override keychain service name (Claude credentials blob / Cursor access token) */
   keychainService?: string;
 };
 
 export type TokmeterConfig = {
   accounts: AccountConfig[];
+  /**
+   * Providers the user explicitly removed. Auto-discovery backfills providers
+   * missing from `accounts` (so a newly-installed CLI shows up without
+   * `accounts add`) — this list is what makes `accounts remove` stick.
+   */
+  dismissed?: ProviderName[];
 };
 
 export type UsageWindow = {
@@ -48,7 +56,8 @@ export type LocalStatsLine = {
 
 export type LocalStats = {
   period: string;
-  source: "local";
+  /** "local" = on-disk logs only; "mixed" = on-disk sessions + provider usage API. */
+  source: "local" | "mixed";
   lines: LocalStatsLine[];
   raw?: Record<string, unknown>;
 };

@@ -1,6 +1,6 @@
-import type { AccountConfig, ProviderSnapshot } from "../types.js";
+import type { AccountConfig, ProviderName, ProviderSnapshot } from "../types.js";
 
 export interface Provider {
-  readonly name: "claude" | "codex" | "grok";
+  readonly name: ProviderName;
   fetchUsage(account: AccountConfig): Promise<ProviderSnapshot>;
 }

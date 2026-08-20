@@ -1,4 +1,4 @@
-import type { ProviderSnapshot, UsageWindow } from "./types.js";
+import type { ProviderName, ProviderSnapshot, UsageWindow } from "./types.js";
 import { bold, colors, dim, paint } from "./utils/ansi.js";
 import {
   formatPercent,
@@ -8,6 +8,21 @@ import {
 import { formatHeaderTime, formatReset } from "./utils/time.js";
 
 const LABEL_WIDTH = 20;
+
+const PROVIDER_TITLES: Record<ProviderName, string> = {
+  claude: "Claude",
+  codex: "Codex",
+  grok: "Grok",
+  cursor: "Cursor",
+};
+
+/** "$0", "$0.01", "$20" — no trailing ".0" on round dollar caps. */
+function usd(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  if (n === 0) return "$0";
+  if (Math.abs(n) < 0.01) return "<$0.01";
+  return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
+}
 
 function padLabel(label: string, width = LABEL_WIDTH): string {
   if (label.length >= width) return label.slice(0, width);
@@ -20,12 +35,7 @@ function colorBar(percent: number | null): string {
 }
 
 function providerTitle(s: ProviderSnapshot): string {
-  const name =
-    s.provider === "claude"
-      ? "Claude"
-      : s.provider === "codex"
-        ? "Codex"
-        : "Grok";
+  const name = PROVIDER_TITLES[s.provider] ?? s.provider;
   // Prefer plan-looking labels as-is; always show plan badge when present.
   const parts = [name];
   // Avoid "Claude · personal · Max 20x" when label is just a slot name —
@@ -58,6 +68,20 @@ function renderWindowLine(w: UsageWindow): string {
     } else if (w.extra?.status === "off") {
       return `│  ${padLabel(w.label)}${dim("off")}`;
     }
+  }
+
+  // Cursor's usage-based spend cap: dollars, not a rolling window.
+  if (w.id === "spend") {
+    const status = String(w.extra?.status ?? "off");
+    if (status === "off") {
+      return `│  ${padLabel(w.label)}${dim("off")}`;
+    }
+    const used = usd(Number(w.extra?.usedDollars ?? 0));
+    if (status === "unlimited") {
+      return `│  ${padLabel(w.label)}${colors.cyan(`${used} · unlimited`)}`;
+    }
+    const limit = usd(Number(w.extra?.limitDollars ?? 0));
+    return `│  ${padLabel(w.label)}${colors.cyan(`${used} / ${limit}`)}`;
   }
 
   if (w.id === "identity") {
@@ -97,9 +121,18 @@ function renderWindowLine(w: UsageWindow): string {
     percentColorCode(w.usedPercent),
     formatPercent(w.usedPercent),
   );
+  // Dollar-metered windows (Cursor) spell out the spend — a bare percentage
+  // hides which pool it's a percentage of.
+  const used = w.extra?.usedDollars;
+  const limit = w.extra?.limitDollars;
+  const spendPart =
+    typeof used === "number" && typeof limit === "number"
+      ? dim(`  ${usd(used)} / ${usd(limit)}`)
+      : "";
+
   const reset = formatReset(w.resetsAt, w.resetsInSeconds ?? null);
   const resetPart = reset ? dim(`  ${reset}`) : "";
-  return `│  ${padLabel(w.label)}${bar}  ${pct}${resetPart}`;
+  return `│  ${padLabel(w.label)}${bar}  ${pct}${spendPart}${resetPart}`;
 }
 
 function renderSnapshot(s: ProviderSnapshot): string[] {

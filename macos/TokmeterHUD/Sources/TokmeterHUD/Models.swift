@@ -42,6 +42,7 @@ struct AccountSnapshot: Codable, Identifiable, Sendable {
         case "claude": return "Claude"
         case "codex": return "Codex"
         case "grok": return "Grok"
+        case "cursor": return "Cursor"
         default: return provider.capitalized
         }
     }
@@ -114,6 +115,9 @@ struct UsageWindow: Codable, Identifiable, Sendable {
         }
         if raw.hasPrefix("Primary") {
             return "Primary"
+        }
+        if raw.localizedCaseInsensitiveContains("included") {
+            return "Included"
         }
         if raw.localizedCaseInsensitiveContains("credit") {
             return "Credits"

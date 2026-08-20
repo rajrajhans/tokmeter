@@ -22,10 +22,10 @@ import { configureNetwork } from "./utils/network.js";
 // Before any provider fetch — see utils/network.ts (Happy Eyeballs / IPv6).
 configureNetwork();
 
-const PROVIDERS: ProviderName[] = ["claude", "codex", "grok"];
+const PROVIDERS: ProviderName[] = ["claude", "codex", "grok", "cursor"];
 
 function printHelp(): void {
-  console.log(`tokmeter — unified usage for Claude Code, Codex, and Grok
+  console.log(`tokmeter — unified usage for Claude Code, Codex, Grok, and Cursor
 
 Usage:
   tokmeter [usage] [--provider <name>] [--json]
@@ -84,6 +84,7 @@ type Parsed = {
     credentialsPath?: string;
     codexHome?: string;
     grokHome?: string;
+    cursorHome?: string;
     keychainService?: string;
     id?: string;
   };
@@ -184,6 +185,8 @@ function parseArgs(argv: string[]): Parsed {
       add.codexHome = args.shift();
     } else if (a === "--grok-home") {
       add.grokHome = args.shift();
+    } else if (a === "--cursor-home") {
+      add.cursorHome = args.shift();
     } else if (a === "--keychain-service") {
       add.keychainService = args.shift();
     } else if (a === "--id") {
@@ -230,7 +233,7 @@ async function cmdUsage(
       console.error(
         provider
           ? `No accounts for provider: ${provider}`
-          : "No accounts discovered. Sign in to Claude Code / Codex / Grok, or add accounts.",
+          : "No accounts discovered. Sign in to Claude Code / Codex / Grok / cursor-agent, or add accounts.",
       );
     }
     return 1;
@@ -269,6 +272,7 @@ async function cmdAccountsList(json: boolean): Promise<number> {
       if (a.credentialsPath) bits.push(`creds=${a.credentialsPath}`);
       if (a.codexHome) bits.push(`codexHome=${a.codexHome}`);
       if (a.grokHome) bits.push(`grokHome=${a.grokHome}`);
+      if (a.cursorHome) bits.push(`cursorHome=${a.cursorHome}`);
       console.log(`  ${bits.join("  ·  ")}`);
     }
     console.log(
@@ -280,7 +284,7 @@ async function cmdAccountsList(json: boolean): Promise<number> {
 
 async function cmdAccountsAdd(add: NonNullable<Parsed["add"]>): Promise<number> {
   if (!add.provider || !PROVIDERS.includes(add.provider)) {
-    console.error("accounts add requires --provider claude|codex|grok");
+    console.error(`accounts add requires --provider ${PROVIDERS.join("|")}`);
     return 1;
   }
   if (!add.label) {
@@ -297,6 +301,7 @@ async function cmdAccountsAdd(add: NonNullable<Parsed["add"]>): Promise<number> 
     credentialsPath: add.credentialsPath,
     codexHome: add.codexHome,
     grokHome: add.grokHome,
+    cursorHome: add.cursorHome,
     keychainService: add.keychainService,
     id: add.id,
   });

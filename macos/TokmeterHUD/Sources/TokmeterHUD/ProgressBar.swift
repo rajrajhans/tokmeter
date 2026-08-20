@@ -20,6 +20,7 @@ enum UsageColor {
         case "claude": return Color(red: 0.85, green: 0.52, blue: 0.28) // warm clay
         case "codex": return Color(red: 0.30, green: 0.78, blue: 0.72)  // teal
         case "grok": return Color(red: 0.55, green: 0.62, blue: 0.98)   // soft blue
+        case "cursor": return Color(red: 0.72, green: 0.55, blue: 0.92) // violet
         default: return Color.white.opacity(0.55)
         }
     }

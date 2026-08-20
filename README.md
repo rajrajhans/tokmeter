@@ -1,6 +1,6 @@
 # tokmeter
 
-One CLI for **Claude Code**, **Codex**, and **Grok** usage — session/weekly quotas, multi-account, no cloud.
+One CLI for **Claude Code**, **Codex**, **Grok**, and **Cursor** usage — session/weekly quotas, multi-account, no cloud.
 
 ```
 tokmeter · 2026-08-03 15:54
@@ -24,6 +24,10 @@ tokmeter · 2026-08-03 15:54
 │  Identity            oidc · User
 │  Weekly credits      ██████░░░░   60%  resets in 24h 26m
 │  Local sessions      142 sessions · ~16.3M tokens (30d)
+│
+┌ Cursor · personal · Pro
+│  Included usage      █░░░░░░░░░   15%  $2.97 / $20  resets Tue 10:30 pm
+│  On-demand spend     $0 / $20
 ```
 
 ## Install
@@ -75,6 +79,18 @@ tokmeter accounts add --provider grok  --label work --grok-home  ~/.grok-work
 
 Config: `~/.config/tokmeter/config.json` (auto-discovers defaults if missing).
 
+### Discovery
+
+A provider only appears once its CLI is **installed and signed in** — no error rows or
+placeholders for tools you don't have. Cursor, for example, needs a `cursor-agent`
+binary on `PATH` *and* a login (`~/.cursor` alone doesn't count; the Cursor IDE creates
+it too). The credential probe never reads the secret, so discovery can't trigger a
+keychain prompt.
+
+Providers missing from an existing `config.json` are backfilled on each run, so
+installing a new agent doesn't require `accounts add`. `accounts remove` on a
+provider's last account records it under `dismissed` and stops that backfill.
+
 ## How it works
 
 | Provider | Plan quotas | Local activity (today) |
@@ -82,8 +98,19 @@ Config: `~/.config/tokmeter/config.json` (auto-discovers defaults if missing).
 | **Claude** | OAuth usage API | `~/.claude/projects` jsonl + daily cost cache |
 | **Codex** | ChatGPT `wham/usage` | `~/.codex/sessions/**/rollout-*.jsonl` token_count |
 | **Grok** | gRPC-web credits | `~/.grok/sessions/**/signals.json` + active sessions |
+| **Cursor** | Connect-RPC `DashboardService` | `~/.cursor/chats/**/meta.json` + `GetAggregatedUsageEvents` |
 
 Local lines (sessions, tokens, models, projects, …) are machine-wide per provider — shown once under the first account of that type. Fetches run in parallel; tokens never printed. Quota APIs are unofficial — treat as advisory.
+
+**Cursor notes.** Auth is the `cursor-access-token` keychain entry that `cursor-agent
+login` writes (`CURSOR_API_KEY` overrides). Cursor meters a monthly *dollar* pool
+rather than a rolling token window, so the bar is spend-based and "resets" is the
+billing cycle end. Its own `totalPercentUsed` / `displayMessage` fields are computed
+against different internal denominators and disagree with each other — tokmeter derives
+the bar from `totalSpend / limit` (the set `remaining` agrees with) and prints the
+dollars alongside; Cursor's raw fields are preserved under `--json`. Cursor stores no
+token counts on disk (transcripts are encrypted), so `stats` token/cost figures come
+from its usage API and the `local` block is marked `source: "mixed"`.
 
 ## Desktop app (macOS)
 
