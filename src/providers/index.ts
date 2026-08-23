@@ -13,8 +13,10 @@ const providers: Record<ProviderName, Provider> = {
   cursor: cursorProvider,
 };
 
-export function getProvider(name: ProviderName): Provider {
-  return providers[name];
+export function getProvider(name: string): Provider | undefined {
+  return Object.hasOwn(providers, name)
+    ? providers[name as ProviderName]
+    : undefined;
 }
 
 export type FetchSnapshotsOptions = {
@@ -27,8 +29,13 @@ export async function fetchAllSnapshots(
   opts: FetchSnapshotsOptions = {},
 ): Promise<ProviderSnapshot[]> {
   const results = await Promise.allSettled(
-    accounts.map((account) => {
+    accounts.map(async (account) => {
       const p = getProvider(account.provider);
+      if (!p) {
+        throw new Error(
+          `Unknown provider "${account.provider}" (account ${account.id})`,
+        );
+      }
       return p.fetchUsage(account);
     }),
   );

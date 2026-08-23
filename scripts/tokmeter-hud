@@ -46,45 +46,76 @@ if [[ ! -x "$BIN" ]]; then
   exit 1
 fi
 
-# Prefer a CLI that supports `stats` (repo build / fresh nix result) over a
-# stale profile install that only has the older surface.
+# Providers implemented in this checkout. Used to reject a stale `result/`
+# (or ~/.local/bin copy) that predates a newly added provider — that used
+# to crash the HUD with `Cannot read properties of undefined (reading
+# 'fetchUsage')` as soon as config.json listed the new account.
+workspace_providers() {
+  local f base
+  if [[ -d "$ROOT/src/providers" ]]; then
+    for f in "$ROOT/src/providers"/*.ts; do
+      [[ -f "$f" ]] || continue
+      base="$(basename "$f" .ts)"
+      case "$base" in
+        index|types) ;;
+        *) printf '%s\n' "$base" ;;
+      esac
+    done
+  else
+    printf '%s\n' claude codex grok cursor
+  fi
+}
+
+# True if this binary looks new enough for the HUD: has `stats`, and its
+# --help mentions every workspace provider (case-insensitive).
+cli_is_current() {
+  local bin="$1"
+  [[ -n "$bin" && -x "$bin" ]] || return 1
+  local help
+  help="$("$bin" --help 2>&1 || true)"
+  grep -q 'stats' <<<"$help" || return 1
+  local p
+  while IFS= read -r p; do
+    [[ -z "$p" ]] && continue
+    grep -qi -- "$p" <<<"$help" || return 1
+  done < <(workspace_providers)
+  return 0
+}
+
 pick_tokmeter() {
   local c
   for c in \
     "$ROOT/result/bin/tokmeter" \
-    "$ROOT/dist/index.js" \
+    "${HOME}/.local/bin/tokmeter" \
     "${HOME}/.nix-profile/bin/tokmeter" \
     /run/current-system/sw/bin/tokmeter
   do
-    if [[ -x "$c" ]] || [[ -f "$c" && "$c" == *.js ]]; then
-      # Probe for `stats` support when it's a real binary.
-      if [[ -x "$c" ]] && "$c" stats --help >/dev/null 2>&1; then
-        echo "$c"
-        return 0
-      fi
-      if [[ -x "$c" ]] && "$c" --help 2>&1 | grep -q 'stats'; then
-        echo "$c"
-        return 0
-      fi
-    fi
-  done
-  # Fall back: any executable tokmeter (HUD will fall back to --json).
-  for c in \
-    "$ROOT/result/bin/tokmeter" \
-    "${HOME}/.nix-profile/bin/tokmeter" \
-    /run/current-system/sw/bin/tokmeter
-  do
-    if [[ -x "$c" ]]; then
-      echo "$c"
+    if cli_is_current "$c"; then
+      printf '%s\n' "$c"
       return 0
     fi
   done
   if command -v tokmeter >/dev/null 2>&1; then
-    command -v tokmeter
-    return 0
+    c="$(command -v tokmeter)"
+    if cli_is_current "$c"; then
+      printf '%s\n' "$c"
+      return 0
+    fi
   fi
   return 1
 }
+
+# Heal a stale ./result even when another current CLI exists. The HUD
+# also hardcodes ~/projects/tokmeter/result/bin/tokmeter; a pre-cursor
+# build there crashes with `reading 'fetchUsage'`.
+if command -v nix >/dev/null 2>&1 && [[ -f "$ROOT/flake.nix" ]]; then
+  if [[ ! -x "$ROOT/result/bin/tokmeter" ]] || ! cli_is_current "$ROOT/result/bin/tokmeter"; then
+    echo "Updating tokmeter CLI to match workspace providers…"
+    if ! (cd "$ROOT" && nix build .); then
+      echo "warning: nix build failed; falling back to another tokmeter" >&2
+    fi
+  fi
+fi
 
 if [[ -z "${TOKMETER_BIN:-}" ]]; then
   if bin="$(pick_tokmeter)"; then
@@ -92,22 +123,9 @@ if [[ -z "${TOKMETER_BIN:-}" ]]; then
   fi
 fi
 
-# Rebuild CLI into ./result when profile is stale (no stats subcommand).
-if [[ -n "${TOKMETER_BIN:-}" ]] && [[ -x "$TOKMETER_BIN" ]]; then
-  if ! "$TOKMETER_BIN" --help 2>&1 | grep -q 'stats'; then
-    if command -v nix >/dev/null 2>&1 && [[ -f "$ROOT/flake.nix" ]]; then
-      echo "Updating tokmeter CLI (installed binary lacks 'stats')…"
-      (cd "$ROOT" && nix build .)
-      if [[ -x "$ROOT/result/bin/tokmeter" ]]; then
-        export TOKMETER_BIN="$ROOT/result/bin/tokmeter"
-      fi
-    fi
-  fi
-fi
-
 # Keep ~/.local/bin in sync so GUI launches (no direnv PATH) find a modern CLI.
-if [[ -n "${TOKMETER_BIN:-}" ]] && [[ -x "$TOKMETER_BIN" ]] \
-  && "$TOKMETER_BIN" --help 2>&1 | grep -q 'stats'; then
+# Never clobber it with a stale wrapper — that's what broke the HUD.
+if [[ -n "${TOKMETER_BIN:-}" ]] && cli_is_current "$TOKMETER_BIN"; then
   mkdir -p "${HOME}/.local/bin"
   if [[ "$TOKMETER_BIN" != "${HOME}/.local/bin/tokmeter" ]]; then
     cp -f "$TOKMETER_BIN" "${HOME}/.local/bin/tokmeter"
