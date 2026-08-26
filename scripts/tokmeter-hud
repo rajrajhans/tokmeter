@@ -25,7 +25,6 @@ fi
 
 need_build=1
 if [[ -x "$BIN_RELEASE" ]]; then
-  # Rebuild if sources are newer than the binary.
   if [[ -z "$(find "$PKG/Sources" "$PKG/Package.swift" -newer "$BIN_RELEASE" 2>/dev/null | head -1)" ]]; then
     need_build=0
   fi
@@ -46,10 +45,6 @@ if [[ ! -x "$BIN" ]]; then
   exit 1
 fi
 
-# Providers implemented in this checkout. Used to reject a stale `result/`
-# (or ~/.local/bin copy) that predates a newly added provider — that used
-# to crash the HUD with `Cannot read properties of undefined (reading
-# 'fetchUsage')` as soon as config.json listed the new account.
 workspace_providers() {
   local f base
   if [[ -d "$ROOT/src/providers" ]]; then
@@ -66,8 +61,6 @@ workspace_providers() {
   fi
 }
 
-# True if this binary looks new enough for the HUD: has `stats`, and its
-# --help mentions every workspace provider (case-insensitive).
 cli_is_current() {
   local bin="$1"
   [[ -n "$bin" && -x "$bin" ]] || return 1
@@ -105,9 +98,6 @@ pick_tokmeter() {
   return 1
 }
 
-# Heal a stale ./result even when another current CLI exists. The HUD
-# also hardcodes ~/projects/tokmeter/result/bin/tokmeter; a pre-cursor
-# build there crashes with `reading 'fetchUsage'`.
 if command -v nix >/dev/null 2>&1 && [[ -f "$ROOT/flake.nix" ]]; then
   if [[ ! -x "$ROOT/result/bin/tokmeter" ]] || ! cli_is_current "$ROOT/result/bin/tokmeter"; then
     echo "Updating tokmeter CLI to match workspace providers…"
@@ -123,8 +113,7 @@ if [[ -z "${TOKMETER_BIN:-}" ]]; then
   fi
 fi
 
-# Keep ~/.local/bin in sync so GUI launches (no direnv PATH) find a modern CLI.
-# Never clobber it with a stale wrapper — that's what broke the HUD.
+# Spotlight / Dock launches have no direnv PATH.
 if [[ -n "${TOKMETER_BIN:-}" ]] && cli_is_current "$TOKMETER_BIN"; then
   mkdir -p "${HOME}/.local/bin"
   if [[ "$TOKMETER_BIN" != "${HOME}/.local/bin/tokmeter" ]]; then
