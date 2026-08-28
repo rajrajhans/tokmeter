@@ -102,6 +102,17 @@ provider's last account records it under `dismissed` and stops that backfill.
 
 Local lines (sessions, tokens, models, projects, …) are machine-wide per provider — shown once under the first account of that type. Fetches run in parallel; tokens never printed. Quota APIs are unofficial — treat as advisory.
 
+**Token refresh.** Claude, Codex, and Grok all self-heal an expired access token
+rather than telling you to go log in again: tokmeter refreshes proactively when the
+stored expiry has passed, and reactively when a quota call comes back unauthorized
+(for Grok that's a `200` with an empty body, not a `401`). Rotated credentials are
+written back to the CLI's own auth file — `~/.codex/auth.json`, `~/.grok/auth.json`,
+the Claude keychain entry — so the provider CLI stays logged in too. Writes are
+atomic and taken under an advisory lock (Grok's own `auth.json.lock` convention),
+and every other field in those files is preserved verbatim. A rejected refresh
+backs off for 10 minutes and surfaces a `run <cli> login` hint instead of retrying
+on every render.
+
 **Cursor notes.** Auth is the `cursor-access-token` keychain entry that `cursor-agent
 login` writes (`CURSOR_API_KEY` overrides). Cursor meters a monthly *dollar* pool
 rather than a rolling token window, so the bar is spend-based and "resets" is the
