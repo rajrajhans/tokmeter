@@ -178,6 +178,9 @@ function renderSnapshot(s: ProviderSnapshot): string[] {
       `│  ${dim(`refreshed slot from live Claude Code (${String(s.extras.rehydratedPlan ?? "")})`)}`,
     );
   }
+  if (s.extras?.refreshed) {
+    lines.push(`│  ${dim("renewed access token via OIDC refresh")}`);
+  }
   lines.push("│");
   return lines;
 }

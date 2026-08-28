@@ -2,13 +2,29 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { AccountConfig, ProviderSnapshot, UsageWindow } from "../types.js";
 import { defaultGrokHome } from "../config.js";
-import { expandHome, pathExists, readJsonFile } from "../utils/fs.js";
+import {
+  expandHome,
+  pathExists,
+  readJsonFile,
+  writeJsonFileAtomic,
+} from "../utils/fs.js";
+import { clearBackoff, isBackedOff, markBackoff } from "../utils/backoff.js";
+import { acquireLock } from "../utils/lock.js";
 import { formatFetchError } from "../utils/network.js";
 import { nowIso, secondsUntil } from "../utils/time.js";
 import type { Provider } from "./types.js";
 
 const BILLING_URL =
   "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
+
+const DEFAULT_OIDC_ISSUER = "https://auth.x.ai";
+const BACKOFF_FILE = "grok-refresh-backoff.json";
+/** After a refresh rejection, don't hit the token endpoint again this soon. */
+const REFRESH_BACKOFF_MS = 10 * 60_000;
+/** Refresh proactively once the access token is this close to expiry. */
+const REFRESH_SKEW_MS = 60_000;
+/** Treat a held auth.json.lock older than this as abandoned. */
+const LOCK_STALE_MS = 30_000;
 
 type GrokAuthEntry = {
   key?: string;
@@ -23,6 +39,11 @@ type GrokAuthEntry = {
 };
 
 type GrokAuthFile = Record<string, GrokAuthEntry | unknown>;
+
+type OidcAuthEntry = GrokAuthEntry & {
+  oidc_issuer?: string;
+  oidc_client_id?: string;
+};
 
 type Signals = {
   contextTokensUsed?: number;
@@ -196,9 +217,12 @@ function parseGrokBillingProtobuf(raw: Uint8Array): GrokBilling {
  * Live Grok Build credits via gRPC-web (same surface CodexBar uses).
  * Auth: OIDC access token from ~/.grok/auth.json (`key` field).
  */
-async function fetchGrokBilling(
-  accessToken: string,
-): Promise<{ ok: true; billing: GrokBilling } | { ok: false; note: string }> {
+type BillingResult =
+  | { ok: true; billing: GrokBilling }
+  /** `authLikely` = the failure looks like a bad/expired token, so a refresh may fix it. */
+  | { ok: false; note: string; authLikely: boolean };
+
+async function fetchGrokBilling(accessToken: string): Promise<BillingResult> {
   try {
     // Empty protobuf message framed as gRPC-web: flag=0, length=0
     const body = new Uint8Array([0, 0, 0, 0, 0]);
@@ -217,32 +241,213 @@ async function fetchGrokBilling(
       body,
     });
     if (!res.ok) {
-      return { ok: false, note: `HTTP ${res.status}` };
+      return {
+        ok: false,
+        note: `HTTP ${res.status}`,
+        authLikely: res.status === 401 || res.status === 403,
+      };
     }
     const ab = await res.arrayBuffer();
     const raw = new Uint8Array(ab);
     if (raw.length === 0) {
-      return { ok: false, note: "empty billing response" };
+      // An expired OIDC token gets a 200 with a zero-length body here rather
+      // than a 401, so this is the usual "needs refresh" signal.
+      return { ok: false, note: "empty billing response", authLikely: true };
     }
     // Trailer-only failure?
     const text = new TextDecoder().decode(raw);
     if (text.includes("grpc-status:16") || text.includes("grpc-status:7")) {
-      return { ok: false, note: "auth rejected (run grok login)" };
+      return {
+        ok: false,
+        note: "auth rejected (run grok login)",
+        authLikely: true,
+      };
     }
     if (text.includes("grpc-status:") && !text.includes("grpc-status:0")) {
       const m = text.match(/grpc-status:(\d+)/);
-      return { ok: false, note: `grpc-status ${m?.[1] ?? "?"}` };
+      return {
+        ok: false,
+        note: `grpc-status ${m?.[1] ?? "?"}`,
+        authLikely: false,
+      };
     }
     const billing = parseGrokBillingProtobuf(raw);
     if (billing.usedPercent == null && !billing.periodEnd) {
-      return { ok: false, note: "could not parse billing protobuf" };
+      return {
+        ok: false,
+        note: "could not parse billing protobuf",
+        authLikely: false,
+      };
     }
     return { ok: true, billing };
   } catch (e) {
     return {
       ok: false,
       note: formatFetchError(e),
+      authLikely: false,
     };
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * OIDC refresh — recover an expired access token without `grok login`
+ * ------------------------------------------------------------------ */
+
+function refreshFp(entry: GrokAuthEntry): string {
+  const r = entry.refresh_token;
+  if (r && r.length >= 12) return r.slice(-12);
+  return (entry.key ?? "").slice(-12);
+}
+
+function clientIdFor(entryKey: string, entry: OidcAuthEntry): string | null {
+  if (entry.oidc_client_id) return entry.oidc_client_id;
+  // Entry keys look like "https://auth.x.ai::<client-id>".
+  const idx = entryKey.indexOf("::");
+  if (idx >= 0) {
+    const tail = entryKey.slice(idx + 2).trim();
+    if (tail) return tail;
+  }
+  return null;
+}
+
+const tokenEndpointCache = new Map<string, string>();
+
+/**
+ * Resolve the issuer's token endpoint via OIDC discovery, falling back to
+ * x.ai's known path so a discovery hiccup doesn't block a refresh.
+ */
+async function discoverTokenEndpoint(issuer: string): Promise<string> {
+  const base = issuer.replace(/\/+$/, "");
+  const cached = tokenEndpointCache.get(base);
+  if (cached) return cached;
+
+  const fallback = `${base}/oauth2/token`;
+  try {
+    const res = await fetch(`${base}/.well-known/openid-configuration`, {
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      const doc = (await res.json()) as { token_endpoint?: string };
+      if (typeof doc.token_endpoint === "string" && doc.token_endpoint) {
+        tokenEndpointCache.set(base, doc.token_endpoint);
+        return doc.token_endpoint;
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+  tokenEndpointCache.set(base, fallback);
+  return fallback;
+}
+
+type RefreshOutcome =
+  | { ok: true; entry: OidcAuthEntry; adopted?: boolean }
+  | { ok: false; note: string };
+
+/**
+ * Exchange the stored refresh token for a fresh access token and write the
+ * rotated credentials back to auth.json, so the Grok CLI stays logged in too.
+ */
+async function refreshGrokAuth(
+  authPath: string,
+  entryKey: string,
+  entry: OidcAuthEntry,
+): Promise<RefreshOutcome> {
+  const refreshToken = entry.refresh_token;
+  if (!refreshToken) {
+    return { ok: false, note: "no refresh token in auth.json — run grok login" };
+  }
+  const clientId = clientIdFor(entryKey, entry);
+  if (!clientId) {
+    return { ok: false, note: "no OIDC client id in auth.json" };
+  }
+
+  const fp = refreshFp(entry);
+  const backedOffUntil = await isBackedOff(BACKOFF_FILE, fp);
+  if (backedOffUntil) {
+    const mins = Math.max(1, Math.ceil((backedOffUntil - Date.now()) / 60_000));
+    return {
+      ok: false,
+      note: `refresh failed recently; retrying in ~${mins}m — run grok login`,
+    };
+  }
+
+  let release: (() => Promise<void>) | null = null;
+  try {
+    // Grok's CLI locks this file with its own `<file>.lock`, so honour it.
+    release = await acquireLock(`${authPath}.lock`, LOCK_STALE_MS);
+
+    // Re-read under the lock: another process may have refreshed already, in
+    // which case our refresh token is spent and theirs is the live one.
+    const current = await readJsonFile<GrokAuthFile>(authPath);
+    const latest = current[entryKey] as OidcAuthEntry | undefined;
+    if (latest?.key && latest.refresh_token !== refreshToken) {
+      return { ok: true, entry: latest, adopted: true };
+    }
+
+    const tokenUrl = await discoverTokenEndpoint(
+      entry.oidc_issuer ?? DEFAULT_OIDC_ISSUER,
+    );
+    const res = await fetch(tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: clientId,
+      }),
+    });
+
+    const bodyText = await res.text();
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const err = JSON.parse(bodyText) as {
+          error?: string;
+          error_description?: string;
+        };
+        if (err.error) detail = err.error_description ?? err.error;
+      } catch {
+        /* keep HTTP status */
+      }
+      // invalid_grant means the refresh token itself is dead — only a real
+      // login fixes that, so back off rather than retrying every render.
+      await markBackoff(BACKOFF_FILE, fp, REFRESH_BACKOFF_MS, res.status);
+      return { ok: false, note: `refresh rejected (${detail}) — run grok login` };
+    }
+
+    const body = JSON.parse(bodyText) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+    if (!body.access_token) {
+      await markBackoff(BACKOFF_FILE, fp, REFRESH_BACKOFF_MS, res.status);
+      return { ok: false, note: "refresh response had no access_token" };
+    }
+
+    const expiresAt =
+      typeof body.expires_in === "number"
+        ? new Date(Date.now() + body.expires_in * 1000).toISOString()
+        : entry.expires_at;
+
+    const nextEntry: OidcAuthEntry = {
+      ...(latest ?? entry),
+      key: body.access_token,
+      refresh_token: body.refresh_token ?? refreshToken,
+      expires_at: expiresAt,
+    };
+    // Preserve every other entry/field verbatim — this file is the Grok CLI's.
+    await writeJsonFileAtomic(authPath, { ...current, [entryKey]: nextEntry });
+    await clearBackoff(BACKOFF_FILE, fp);
+    return { ok: true, entry: nextEntry };
+  } catch (e) {
+    return { ok: false, note: formatFetchError(e) };
+  } finally {
+    if (release) await release();
   }
 }
 
@@ -326,14 +531,33 @@ export class GrokProvider implements Provider {
       if (!picked) {
         throw new Error("Grok auth.json has no OIDC entries");
       }
-      const entry = picked.entry;
+      let entry = picked.entry as OidcAuthEntry;
       if (!entry.key) {
         throw new Error("Grok auth entry missing access token (key)");
       }
 
-      // Expire check (informational; still try request)
-      const expired =
-        entry.expires_at && new Date(entry.expires_at).getTime() < Date.now();
+      let refreshed = false;
+      let refreshAttempted = false;
+      let refreshNote: string | null = null;
+
+      const isExpired = (e: GrokAuthEntry) =>
+        Boolean(
+          e.expires_at &&
+            new Date(e.expires_at).getTime() - REFRESH_SKEW_MS <= Date.now(),
+        );
+
+      // Expired token → refresh up front rather than spending a request we
+      // know will come back empty.
+      if (isExpired(entry) && entry.refresh_token) {
+        refreshAttempted = true;
+        const r = await refreshGrokAuth(authPath, picked.key, entry);
+        if (r.ok) {
+          entry = r.entry;
+          refreshed = !r.adopted;
+        } else {
+          refreshNote = r.note;
+        }
+      }
 
       const since = Date.now() - 30 * 24 * 3600 * 1000;
       const local = await walkSignals(join(home, "sessions"), since);
@@ -361,7 +585,27 @@ export class GrokProvider implements Provider {
       let provenance: ProviderSnapshot["provenance"] = "local_estimate";
       let source = "auth_file+local";
 
-      const billingResult = await fetchGrokBilling(entry.key);
+      let billingResult = await fetchGrokBilling(entry.key!);
+
+      // Reactive retry: the token was rejected (or silently ignored) even
+      // though it looked valid — refresh once and try again.
+      if (!billingResult.ok && billingResult.authLikely && !refreshAttempted) {
+        if (entry.refresh_token) {
+          refreshAttempted = true;
+          const r = await refreshGrokAuth(authPath, picked.key, entry);
+          if (r.ok) {
+            entry = r.entry;
+            refreshed = !r.adopted;
+            refreshNote = null;
+            billingResult = await fetchGrokBilling(entry.key!);
+          } else {
+            refreshNote = r.note;
+          }
+        } else {
+          refreshNote = "no refresh token in auth.json — run grok login";
+        }
+      }
+
       if (billingResult.ok) {
         const b = billingResult.billing;
         const label = windowLabelFromPeriod(b.periodStart, b.periodEnd);
@@ -377,23 +621,27 @@ export class GrokProvider implements Provider {
           },
         });
         provenance = "official";
-        source = "grpc-web+local";
+        source = refreshed ? "grpc-web+refreshed" : "grpc-web+local";
         extras.billing = b;
       } else {
+        // refreshNote (why re-auth couldn't help) is the actionable part;
+        // the raw billing note is the symptom.
+        const note = refreshNote
+          ? `${refreshNote} (${billingResult.note})`
+          : billingResult.note;
         windows.push({
           id: "billing",
           label: "Live billing",
           usedPercent: null,
           resetsAt: null,
-          extra: {
-            status: "unavailable",
-            note: expired
-              ? `token expired — run grok login (${billingResult.note})`
-              : billingResult.note,
-          },
+          extra: { status: "unavailable", note },
         });
-        extras.billing_note = billingResult.note;
+        extras.billing_note = note;
       }
+
+      if (refreshed) extras.refreshed = true;
+      if (refreshNote) extras.refresh_note = refreshNote;
+      extras.expires_at = entry.expires_at ?? null;
 
       windows.push({
         id: "local",

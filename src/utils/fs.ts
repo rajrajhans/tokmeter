@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -31,6 +31,29 @@ export async function writeJsonFile(
   await mkdir(dirname(path), { recursive: true });
   const payload = `${JSON.stringify(data, null, 2)}\n`;
   await writeFile(path, payload, { encoding: "utf8", mode });
+}
+
+/**
+ * Write JSON via temp file + rename.
+ *
+ * Used for credential files another CLI reads concurrently (e.g. Grok's
+ * auth.json): a torn plain write would leave the user logged out of that CLI.
+ */
+export async function writeJsonFileAtomic(
+  path: string,
+  data: unknown,
+  mode = 0o600,
+): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const payload = `${JSON.stringify(data, null, 2)}\n`;
+  const tmp = `${path}.tokmeter-${process.pid}.tmp`;
+  try {
+    await writeFile(tmp, payload, { encoding: "utf8", mode });
+    await rename(tmp, path);
+  } catch (e) {
+    await unlink(tmp).catch(() => {});
+    throw e;
+  }
 }
 
 export function configDir(): string {

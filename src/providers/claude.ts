@@ -6,13 +6,18 @@ import {
   defaultClaudeCredentialsPath,
   defaultClaudeKeychainService,
 } from "../config.js";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   pathExists,
   readJsonFile,
   writeJsonFile,
 } from "../utils/fs.js";
+import {
+  cacheRoot,
+  clearBackoff,
+  isBackedOff,
+  markBackoff,
+} from "../utils/backoff.js";
 import { formatFetchError } from "../utils/network.js";
 import { nowIso, secondsUntil } from "../utils/time.js";
 import type { Provider } from "./types.js";
@@ -223,54 +228,24 @@ async function persistCredentials(
   }
 }
 
-function cacheRoot(): string {
-  const xdg = process.env.XDG_CACHE_HOME;
-  return xdg
-    ? join(xdg, "tokmeter")
-    : join(homedir(), ".cache", "tokmeter");
-}
-
 function refreshFp(oauth: ClaudeOauth): string {
   const r = oauth.refreshToken;
   if (r && r.length >= 12) return r.slice(-12);
   return oauth.accessToken.slice(-12);
 }
 
-type BackoffState = Record<string, { until: number; lastStatus?: number }>;
-
-async function readBackoff(): Promise<BackoffState> {
-  const p = join(cacheRoot(), "claude-refresh-backoff.json");
-  try {
-    if (await pathExists(p)) return await readJsonFile<BackoffState>(p);
-  } catch {
-    /* ignore */
-  }
-  return {};
-}
-
-async function writeBackoff(state: BackoffState): Promise<void> {
-  await writeJsonFile(join(cacheRoot(), "claude-refresh-backoff.json"), state);
-}
+const BACKOFF_FILE = "claude-refresh-backoff.json";
 
 async function isRefreshBackedOff(fp: string): Promise<number | null> {
-  const state = await readBackoff();
-  const until = state[fp]?.until ?? 0;
-  if (until > Date.now()) return until;
-  return null;
+  return isBackedOff(BACKOFF_FILE, fp);
 }
 
 async function markRefreshBackoff(fp: string, status: number): Promise<void> {
-  const state = await readBackoff();
-  state[fp] = { until: Date.now() + REFRESH_429_BACKOFF_MS, lastStatus: status };
-  await writeBackoff(state);
+  await markBackoff(BACKOFF_FILE, fp, REFRESH_429_BACKOFF_MS, status);
 }
 
 async function clearRefreshBackoff(fp: string): Promise<void> {
-  const state = await readBackoff();
-  if (state[fp]) {
-    delete state[fp];
-    await writeBackoff(state);
-  }
+  await clearBackoff(BACKOFF_FILE, fp);
 }
 
 type CachedUsage = {
