@@ -165,6 +165,9 @@ struct UsageWindow: Codable, Identifiable, Sendable {
             }
             return false
 
+        case "activity":
+            return true
+
         default:
             // Unknown non-percent rows are clutter in a HUD.
             return false

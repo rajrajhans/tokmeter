@@ -91,6 +91,11 @@ function renderWindowLine(w: UsageWindow): string {
     return `│  ${padLabel(w.label)}${colors.cyan(`${mode} · ${principal}`)}`;
   }
 
+  if (w.id === "activity") {
+    const status = String(w.extra?.status ?? "unknown");
+    return `│  ${padLabel(w.label)}${colors.cyan(status)}`;
+  }
+
   if (w.id === "local") {
     const sessions = w.extra?.sessions ?? 0;
     const tokensLabel = w.extra?.tokensLabel ?? "0";

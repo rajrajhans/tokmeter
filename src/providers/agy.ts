@@ -17,7 +17,15 @@ export class AgyProvider implements Provider {
       email: null,
       source: "local",
       provenance: "local_estimate",
-      windows: [],
+      windows: [
+        {
+          id: "activity",
+          label: "Activity",
+          usedPercent: null,
+          resetsAt: null,
+          extra: { status: "Local only" },
+        }
+      ],
       extras: {},
       fetchedAt,
     };
