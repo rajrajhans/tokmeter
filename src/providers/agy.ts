@@ -35,8 +35,9 @@ export class AgyProvider implements Provider {
       }
     }
     
+    let fetchError: Error | null = null;
     try {
-      const { stdout } = await execFileAsync(agyBin, ["-p", "/usage"], { timeout: 10000 });
+      const { stdout } = await execFileAsync(agyBin, ["-p", "/usage"], { timeout: 30000 });
       const lines = stdout.trim().split("\n");
       
       for (const line of lines) {
@@ -85,7 +86,7 @@ export class AgyProvider implements Provider {
         }
       }
     } catch (e) {
-      // ignore, fallback to basic
+      fetchError = e instanceof Error ? e : new Error(String(e));
     }
 
     const extras: Record<string, unknown> = {};
@@ -105,7 +106,7 @@ export class AgyProvider implements Provider {
         usedPercent: pct,
         resetsAt: null,
       });
-      extras.warning = "Could not resolve `agy -p /usage`. Showing local estimate.";
+      extras.warning = `Could not load cloud quota: ${fetchError?.message ?? "unknown error"}. Showing local estimate.`;
     }
 
     return {
