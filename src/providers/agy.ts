@@ -4,6 +4,9 @@ import type { Provider } from "./types.js";
 import { collectAgyLocalStats } from "../stats/agy-local.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { pathExists } from "../utils/fs.js";
+import { join } from "node:path";
+import { homedir } from "node:os";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,26 +17,41 @@ export class AgyProvider implements Provider {
     const fetchedAt = nowIso();
     const windows: UsageWindow[] = [];
     
+    // In strict environments like Nix, `agy` might not be in PATH.
+    let agyBin = process.env.AGY_BIN || "agy";
+    if (!process.env.AGY_BIN) {
+      const commonPaths = [
+        "/opt/homebrew/bin/agy",
+        "/usr/local/bin/agy",
+        join(homedir(), ".local/bin/agy"),
+        join(homedir(), "bin/agy"),
+      ];
+      
+      for (const p of commonPaths) {
+        if (await pathExists(p)) {
+          agyBin = p;
+          break;
+        }
+      }
+    }
+    
     try {
-      // The agy CLI can print quota info non-interactively using `-p /usage`.
-      // It returns tab-separated lines: Group \t Metric \t Remaining% \t ResetISO
-      const { stdout } = await execFileAsync("agy", ["-p", "/usage"], { timeout: 10000 });
+      const { stdout } = await execFileAsync(agyBin, ["-p", "/usage"], { timeout: 10000 });
       const lines = stdout.trim().split("\n");
       
       for (const line of lines) {
         if (!line) continue;
         const parts = line.split("\t");
         if (parts.length === 4) {
-          const group = parts[0]; // e.g. "Gemini Models"
-          const metric = parts[1]; // e.g. "Weekly Limit Remaining"
-          const pctStr = parts[2]; // e.g. "98%"
-          const dateStr = parts[3]; // e.g. "2026-09-05T13:14:01Z"
+          const group = parts[0]; 
+          const metric = parts[1]; 
+          const pctStr = parts[2]; 
+          const dateStr = parts[3]; 
           
           let usedPercent = null;
           if (pctStr.endsWith("%")) {
             const rem = parseFloat(pctStr.replace("%", ""));
             if (!isNaN(rem)) {
-              // agy outputs *remaining* quota (e.g. 98%), tokmeter renders *used* quota (e.g. 2%).
               usedPercent = 100 - rem;
             }
           }
@@ -46,7 +64,6 @@ export class AgyProvider implements Provider {
              if (diff !== undefined) resetsInSeconds = diff;
           }
           
-          // Map long metrics to concise tokmeter labels
           let baseLabel = metric;
           if (metric.includes("Weekly")) baseLabel = "Weekly";
           else if (metric.includes("Five Hour")) baseLabel = "Session";
@@ -71,7 +88,8 @@ export class AgyProvider implements Provider {
       // ignore, fallback to basic
     }
 
-    // fallback if no quota found
+    const extras: Record<string, unknown> = {};
+
     if (windows.length === 0) {
       const local = await collectAgyLocalStats();
       let sessions = 0;
@@ -87,6 +105,7 @@ export class AgyProvider implements Provider {
         usedPercent: pct,
         resetsAt: null,
       });
+      extras.warning = "Could not resolve `agy -p /usage`. Showing local estimate.";
     }
 
     return {
@@ -99,7 +118,7 @@ export class AgyProvider implements Provider {
       source: "api",
       provenance: "official",
       windows,
-      extras: {},
+      extras,
       fetchedAt,
     };
   }
