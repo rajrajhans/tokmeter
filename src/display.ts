@@ -91,7 +91,7 @@ function renderWindowLine(w: UsageWindow): string {
     return `│  ${padLabel(w.label)}${colors.cyan(`${mode} · ${principal}`)}`;
   }
 
-  if (w.id === "activity") {
+  if (w.id === "activity" && w.usedPercent == null) {
     const status = String(w.extra?.status ?? "unknown");
     return `│  ${padLabel(w.label)}${colors.cyan(status)}`;
   }
