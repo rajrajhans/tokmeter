@@ -21,6 +21,7 @@ enum UsageColor {
         case "codex": return Color(red: 0.30, green: 0.78, blue: 0.72)  // teal
         case "grok": return Color(red: 0.55, green: 0.62, blue: 0.98)   // soft blue
         case "cursor": return Color(red: 0.72, green: 0.55, blue: 0.92) // violet
+        case "agy": return Color(red: 0.26, green: 0.52, blue: 0.96)    // google blue
         default: return Color.white.opacity(0.55)
         }
     }

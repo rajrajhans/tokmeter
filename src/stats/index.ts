@@ -3,6 +3,7 @@ import { collectClaudeLocalStats } from "./claude-local.js";
 import { collectCodexLocalStats } from "./codex-local.js";
 import { collectCursorLocalStats } from "./cursor-local.js";
 import { collectGrokLocalStats } from "./grok-local.js";
+import { collectAgyLocalStats } from "./agy-local.js";
 
 /**
  * Attach machine-local activity stats once per provider (first account only)
@@ -29,6 +30,8 @@ export async function attachLocalStats(
         } else if (provider === "cursor") {
           const acct = accounts.find((a) => a.provider === "cursor");
           cache.set(provider, await collectCursorLocalStats(acct));
+        } else if (provider === "agy") {
+          cache.set(provider, await collectAgyLocalStats());
         }
       } catch {
         cache.set(provider, null);

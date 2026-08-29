@@ -14,6 +14,7 @@ const PROVIDER_TITLES: Record<ProviderName, string> = {
   codex: "Codex",
   grok: "Grok",
   cursor: "Cursor",
+  agy: "Antigravity",
 };
 
 /** "$0", "$0.01", "$20" — no trailing ".0" on round dollar caps. */

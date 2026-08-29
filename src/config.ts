@@ -185,6 +185,16 @@ async function discoverDefaults(): Promise<AccountConfig[]> {
     });
   }
 
+  const agyHome = join(homedir(), ".gemini", "antigravity-cli");
+  if (await pathExists(agyHome)) {
+    accounts.push({
+      id: "agy-default",
+      provider: "agy",
+      label: "personal",
+      source: "auto",
+    });
+  }
+
   return accounts;
 }
 

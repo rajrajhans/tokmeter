@@ -22,7 +22,7 @@ import { configureNetwork } from "./utils/network.js";
 // Before any provider fetch — see utils/network.ts (Happy Eyeballs / IPv6).
 configureNetwork();
 
-const PROVIDERS: ProviderName[] = ["claude", "codex", "grok", "cursor"];
+const PROVIDERS: ProviderName[] = ["claude", "codex", "grok", "cursor", "agy"];
 
 function printHelp(): void {
   console.log(`tokmeter — unified usage for Claude Code, Codex, Grok, and Cursor

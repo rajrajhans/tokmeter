@@ -1,4 +1,4 @@
-export type ProviderName = "claude" | "codex" | "grok" | "cursor";
+export type ProviderName = "claude" | "codex" | "grok" | "cursor" | "agy";
 
 export type AccountSource =
   | "auto"

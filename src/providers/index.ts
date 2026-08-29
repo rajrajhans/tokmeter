@@ -4,6 +4,7 @@ import { claudeProvider } from "./claude.js";
 import { codexProvider } from "./codex.js";
 import { cursorProvider } from "./cursor.js";
 import { grokProvider } from "./grok.js";
+import { agyProvider } from "./agy.js";
 import type { Provider } from "./types.js";
 
 const providers: Record<ProviderName, Provider> = {
@@ -11,6 +12,7 @@ const providers: Record<ProviderName, Provider> = {
   codex: codexProvider,
   grok: grokProvider,
   cursor: cursorProvider,
+  agy: agyProvider,
 };
 
 export function getProvider(name: string): Provider | undefined {
@@ -62,4 +64,4 @@ export async function fetchAllSnapshots(
   return snapshots;
 }
 
-export { claudeProvider, codexProvider, cursorProvider, grokProvider };
+export { claudeProvider, codexProvider, cursorProvider, grokProvider, agyProvider };

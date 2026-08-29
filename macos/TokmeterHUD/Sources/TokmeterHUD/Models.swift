@@ -43,6 +43,7 @@ struct AccountSnapshot: Codable, Identifiable, Sendable {
         case "codex": return "Codex"
         case "grok": return "Grok"
         case "cursor": return "Cursor"
+        case "agy": return "Antigravity"
         default: return provider.capitalized
         }
     }
