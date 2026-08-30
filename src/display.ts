@@ -191,14 +191,107 @@ function renderSnapshot(s: ProviderSnapshot): string[] {
   return lines;
 }
 
-export function renderHuman(snapshots: ProviderSnapshot[]): string {
+export function renderHuman(
+  snapshots: ProviderSnapshot[],
+  headerAt = new Date(),
+): string {
   const lines: string[] = [];
-  lines.push(bold(`tokmeter · ${formatHeaderTime()}`));
+  lines.push(bold(`tokmeter · ${formatHeaderTime(headerAt)}`));
   lines.push("");
   for (const s of snapshots) {
     lines.push(...renderSnapshot(s));
   }
   if (snapshots.length === 0) {
+    lines.push(dim("No accounts configured. Run: tokmeter accounts list"));
+  }
+  return lines.join("\n");
+}
+
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/** "3.2s" while it still feels like seconds, "1m 04s" once it doesn't. */
+function formatElapsed(ms: number): string {
+  const secs = Math.max(0, ms) / 1000;
+  if (secs < 60) return `${secs.toFixed(1)}s`;
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}m ${String(s).padStart(2, "0")}s`;
+}
+
+function truncate(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
+}
+
+/** Where one account is in its fetch, for the live view. */
+export type FetchStatus =
+  | { phase: "pending"; startedAt: number; attempt: number; maxAttempts: number }
+  | {
+      phase: "retrying";
+      startedAt: number;
+      attempt: number;
+      maxAttempts: number;
+      reason: string;
+    }
+  | { phase: "done"; snapshot: ProviderSnapshot };
+
+export type LiveEntry = {
+  provider: ProviderName;
+  label: string;
+  status: FetchStatus;
+};
+
+function renderWaiting(
+  entry: LiveEntry,
+  status: Exclude<FetchStatus, { phase: "done" }>,
+  frame: number,
+  now: number,
+): string[] {
+  const name = PROVIDER_TITLES[entry.provider] ?? entry.provider;
+  const title = [name, entry.label].filter(Boolean).join(" · ");
+  const spin = SPINNER[frame % SPINNER.length];
+  const elapsed = formatElapsed(now - status.startedAt).padStart(6);
+
+  let label: string;
+  let note = "";
+  if (status.phase === "retrying") {
+    label = `Retrying ${status.attempt}/${status.maxAttempts}`;
+    note = status.reason;
+  } else {
+    label =
+      status.attempt > 1
+        ? `Fetching… (${status.attempt}/${status.maxAttempts})`
+        : "Fetching…";
+  }
+
+  const notePart = note ? dim(`  ${truncate(note, 44)}`) : "";
+  return [
+    `${colors.gray("┌")} ${bold(title)}`,
+    `│  ${padLabel(label)}${colors.yellow(spin)} ${dim(elapsed)}${notePart}`,
+    "│",
+  ];
+}
+
+/**
+ * Same layout as `renderHuman`, except accounts still in flight render as a
+ * spinner + elapsed counter instead of a box of bars. Every account gets a
+ * slot immediately, so the resolved ones are readable while the slow ones tick.
+ */
+export function renderLive(
+  entries: LiveEntry[],
+  opts: { frame: number; now: number; headerAt: Date },
+): string {
+  const lines: string[] = [];
+  lines.push(bold(`tokmeter · ${formatHeaderTime(opts.headerAt)}`));
+  lines.push("");
+  for (const entry of entries) {
+    if (entry.status.phase === "done") {
+      lines.push(...renderSnapshot(entry.status.snapshot));
+    } else {
+      lines.push(...renderWaiting(entry, entry.status, opts.frame, opts.now));
+    }
+  }
+  if (entries.length === 0) {
     lines.push(dim("No accounts configured. Run: tokmeter accounts list"));
   }
   return lines.join("\n");

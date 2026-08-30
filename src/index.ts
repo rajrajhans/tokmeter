@@ -15,8 +15,9 @@ import {
   removeAccount,
 } from "./config.js";
 import { renderHuman, renderJson } from "./display.js";
-import { fetchAllSnapshots } from "./providers/index.js";
-import type { ProviderName } from "./types.js";
+import { fetchAndRenderLive, liveSupported } from "./live.js";
+import { fetchSnapshots } from "./providers/index.js";
+import type { ProviderName, ProviderSnapshot } from "./types.js";
 import { configureNetwork } from "./utils/network.js";
 
 // Before any provider fetch — see utils/network.ts (Happy Eyeballs / IPv6).
@@ -240,19 +241,30 @@ async function cmdUsage(
   }
 
   const includeLocal = opts.includeLocal === true;
-  let snapshots = await fetchAllSnapshots(accounts, { includeLocal });
   // Concise mode: drop coarse per-provider local activity windows (e.g. Grok).
-  if (!includeLocal) {
-    snapshots = snapshots.map((s) => ({
-      ...s,
-      windows: s.windows.filter((w) => w.id !== "local"),
-      local: undefined,
-    }));
-  }
-  if (json) {
-    process.stdout.write(renderJson(snapshots));
+  const concise = (s: ProviderSnapshot): ProviderSnapshot =>
+    includeLocal
+      ? s
+      : {
+          ...s,
+          windows: s.windows.filter((w) => w.id !== "local"),
+          local: undefined,
+        };
+
+  let snapshots: ProviderSnapshot[];
+  if (!json && liveSupported()) {
+    // Renders as it goes and prints the finished view itself.
+    snapshots = await fetchAndRenderLive(accounts, {
+      includeLocal,
+      transform: concise,
+    });
   } else {
-    process.stdout.write(`${renderHuman(snapshots)}\n`);
+    snapshots = (await fetchSnapshots(accounts, { includeLocal })).map(concise);
+    if (json) {
+      process.stdout.write(renderJson(snapshots));
+    } else {
+      process.stdout.write(`${renderHuman(snapshots)}\n`);
+    }
   }
   return snapshots.every((s) => s.ok) ? 0 : 2;
 }

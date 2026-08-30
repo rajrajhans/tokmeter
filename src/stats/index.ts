@@ -1,4 +1,4 @@
-import type { AccountConfig, LocalStats, ProviderName, ProviderSnapshot } from "../types.js";
+import type { AccountConfig, LocalStats, ProviderName } from "../types.js";
 import { collectClaudeLocalStats } from "./claude-local.js";
 import { collectCodexLocalStats } from "./codex-local.js";
 import { collectCursorLocalStats } from "./cursor-local.js";
@@ -6,45 +6,45 @@ import { collectGrokLocalStats } from "./grok-local.js";
 import { collectAgyLocalStats } from "./agy-local.js";
 
 /**
- * Attach machine-local activity stats once per provider (first account only)
- * so multi-Claude slots don't print the same today-totals three times.
+ * Machine-local activity for one provider. Scans on-disk JSONL / signals —
+ * `accounts` only supplies the per-provider home overrides.
  */
-export async function attachLocalStats(
-  snapshots: ProviderSnapshot[],
+export async function collectLocalStatsFor(
+  provider: ProviderName,
   accounts: AccountConfig[],
-): Promise<ProviderSnapshot[]> {
-  const need = new Set(snapshots.map((s) => s.provider));
-  const cache = new Map<ProviderName, LocalStats | null>();
+): Promise<LocalStats | null> {
+  try {
+    if (provider === "claude") return await collectClaudeLocalStats();
+    if (provider === "codex") {
+      const home = accounts.find((a) => a.provider === "codex")?.codexHome;
+      return await collectCodexLocalStats(home);
+    }
+    if (provider === "grok") {
+      const home = accounts.find((a) => a.provider === "grok")?.grokHome;
+      return await collectGrokLocalStats(home);
+    }
+    if (provider === "cursor") {
+      const acct = accounts.find((a) => a.provider === "cursor");
+      return await collectCursorLocalStats(acct);
+    }
+    if (provider === "agy") return await collectAgyLocalStats();
+  } catch {
+    return null;
+  }
+  return null;
+}
 
-  await Promise.all(
-    [...need].map(async (provider) => {
-      try {
-        if (provider === "claude") {
-          cache.set(provider, await collectClaudeLocalStats());
-        } else if (provider === "codex") {
-          const home = accounts.find((a) => a.provider === "codex")?.codexHome;
-          cache.set(provider, await collectCodexLocalStats(home));
-        } else if (provider === "grok") {
-          const home = accounts.find((a) => a.provider === "grok")?.grokHome;
-          cache.set(provider, await collectGrokLocalStats(home));
-        } else if (provider === "cursor") {
-          const acct = accounts.find((a) => a.provider === "cursor");
-          cache.set(provider, await collectCursorLocalStats(acct));
-        } else if (provider === "agy") {
-          cache.set(provider, await collectAgyLocalStats());
-        }
-      } catch {
-        cache.set(provider, null);
-      }
-    }),
-  );
-
-  const attached = new Set<ProviderName>();
-  return snapshots.map((s) => {
-    if (attached.has(s.provider)) return s;
-    const local = cache.get(s.provider);
-    if (!local || local.lines.length === 0) return s;
-    attached.add(s.provider);
-    return { ...s, local };
+/**
+ * Index of the account that "owns" each provider's local stats — the first one
+ * in list order, so multi-Claude slots don't print the same today-totals three
+ * times.
+ */
+export function localStatsOwners(
+  accounts: AccountConfig[],
+): Map<ProviderName, number> {
+  const owners = new Map<ProviderName, number>();
+  accounts.forEach((a, i) => {
+    if (!owners.has(a.provider)) owners.set(a.provider, i);
   });
+  return owners;
 }
