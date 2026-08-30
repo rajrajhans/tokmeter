@@ -17,6 +17,20 @@ const PROVIDER_TITLES: Record<ProviderName, string> = {
   agy: "Antigravity",
 };
 
+/** Stable quota rows to reserve while each provider is still in flight. */
+const WAITING_WINDOW_LABELS: Record<ProviderName, readonly string[]> = {
+  claude: ["Current session", "Weekly · All models", "Usage credits"],
+  codex: ["Primary (7d)", "Credits", "Rate-limit resets"],
+  grok: ["Identity", "Weekly credits"],
+  cursor: ["Included usage", "On-demand spend"],
+  agy: [
+    "Weekly · Gemini",
+    "Session · Gemini",
+    "Weekly · Claude",
+    "Session · Claude",
+  ],
+};
+
 /** "$0", "$0.01", "$20" — no trailing ".0" on round dollar caps. */
 function usd(n: number): string {
   if (!Number.isFinite(n)) return "—";
@@ -251,31 +265,38 @@ function renderWaiting(
   const title = [name, entry.label].filter(Boolean).join(" · ");
   const spin = SPINNER[frame % SPINNER.length];
   const elapsed = formatElapsed(now - status.startedAt).padStart(6);
+  const labels = [...WAITING_WINDOW_LABELS[entry.provider]];
 
-  let label: string;
-  let note = "";
-  if (status.phase === "retrying") {
-    label = `Retrying ${status.attempt}/${status.maxAttempts}`;
-    note = status.reason;
-  } else {
-    label =
-      status.attempt > 1
-        ? `Fetching… (${status.attempt}/${status.maxAttempts})`
-        : "Fetching…";
+  // Max currently has one extra scoped weekly pool. The account label is the
+  // only plan information available before the provider response arrives.
+  if (entry.provider === "claude" && /(^|\W)max(\W|$)/i.test(entry.label)) {
+    labels.splice(2, 0, "Weekly · Fable");
   }
 
-  const notePart = note ? dim(`  ${truncate(note, 44)}`) : "";
-  return [
-    `${colors.gray("┌")} ${bold(title)}`,
-    `│  ${padLabel(label)}${colors.yellow(spin)} ${dim(elapsed)}${notePart}`,
-    "│",
-  ];
+  let statusPart = "";
+  if (status.phase === "retrying") {
+    statusPart = dim(
+      `  retry ${status.attempt}/${status.maxAttempts}: ${truncate(status.reason, 44)}`,
+    );
+  } else if (status.attempt > 1) {
+    statusPart = dim(`  attempt ${status.attempt}/${status.maxAttempts}`);
+  }
+
+  const lines = [`${colors.gray("┌")} ${bold(title)}`];
+  for (const [index, label] of labels.entries()) {
+    const detail = index === 0 ? statusPart : "";
+    lines.push(
+      `│  ${padLabel(label)}${colors.yellow(spin)} ${dim(elapsed)}${detail}`,
+    );
+  }
+  lines.push("│");
+  return lines;
 }
 
 /**
- * Same layout as `renderHuman`, except accounts still in flight render as a
- * spinner + elapsed counter instead of a box of bars. Every account gets a
- * slot immediately, so the resolved ones are readable while the slow ones tick.
+ * Same layout as `renderHuman`, except the value/bar area of accounts still in
+ * flight shows a spinner + elapsed counter. Their expected rows are painted up
+ * front, so resolved accounts do not push the providers below them around.
  */
 export function renderLive(
   entries: LiveEntry[],
