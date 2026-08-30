@@ -17,7 +17,6 @@ function visibleWidth(line: string): number {
 
 export class LiveRegion {
   private rows = 0;
-  private disabled = false;
   private cursorHidden = false;
   private readonly stream: NodeJS.WriteStream;
 
@@ -45,6 +44,39 @@ export class LiveRegion {
     return total;
   }
 
+  /**
+   * Keep live repainting safe when the full view is taller than the terminal.
+   * The tail contains the providers that are still settling (normally the slow
+   * one), while the complete, uncut view is still printed by `finish()`.
+   */
+  private fitToViewport(text: string): string {
+    const maxRows = Math.max(1, this.viewportRows - 1);
+    if (this.rowsFor(text) <= maxRows) return text;
+
+    const lines = text.split("\n");
+    const kept: string[] = [];
+    // Reserve one visual row for the omitted-content marker.
+    let usedRows = 1;
+    let firstKept = lines.length;
+
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const lineRows = this.rowsFor(lines[i]!);
+      if (usedRows + lineRows > maxRows) break;
+      kept.unshift(lines[i]!);
+      usedRows += lineRows;
+      firstKept = i;
+    }
+
+    // A crop boundary can land on the separator at the end of a provider box.
+    // Do not leave that orphaned connector directly under the marker.
+    while (kept[0]?.replace(ANSI_RE, "").trim() === "│") {
+      kept.shift();
+      firstKept += 1;
+    }
+
+    return [`… ${firstKept} lines above`, ...kept].join("\n");
+  }
+
   private erase(): void {
     if (this.rows > 0) this.stream.write(`${ESC}[${this.rows}A`);
     this.stream.write(`${ESC}[0J`);
@@ -67,27 +99,19 @@ export class LiveRegion {
     this.stream.write(text.endsWith("\n") ? text : `${text}\n`);
   }
 
-  /** Redraw the region with `text`. No-op once the region has been disabled. */
+  /** Redraw the region with `text`, clipping tall intermediate views safely. */
   update(text: string): void {
-    if (this.disabled) return;
-    const next = this.rowsFor(text);
-    if (next >= this.viewportRows) {
-      // Taller than the window: the terminal would scroll and invalidate the
-      // cursor-up count. Drop back to printing once, at the end.
-      this.erase();
-      this.showCursor();
-      this.disabled = true;
-      return;
-    }
+    const fitted = this.fitToViewport(text);
+    const next = this.rowsFor(fitted);
     this.hideCursor();
     this.erase();
-    this.writeBlock(text);
+    this.writeBlock(fitted);
     this.rows = next;
   }
 
   /** Replace the region with its final content and hand the cursor back. */
   finish(text: string): void {
-    if (!this.disabled) this.erase();
+    this.erase();
     this.writeBlock(text);
     this.rows = 0;
     this.showCursor();
@@ -95,7 +119,7 @@ export class LiveRegion {
 
   /** Tear the region down without printing anything (Ctrl-C). */
   abort(): void {
-    if (!this.disabled) this.erase();
+    this.erase();
     this.showCursor();
   }
 }
