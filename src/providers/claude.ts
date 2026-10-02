@@ -19,7 +19,7 @@ import {
   markBackoff,
 } from "../utils/backoff.js";
 import { formatFetchError } from "../utils/network.js";
-import { nowIso, secondsUntil } from "../utils/time.js";
+import { formatDuration, nowIso, secondsUntil } from "../utils/time.js";
 import type { Provider } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -37,6 +37,16 @@ const REFRESH_SKEW_MS = 60_000;
 const REFRESH_429_BACKOFF_MS = 15 * 60_000;
 /** Serve last successful usage this long when live fetch fails. */
 const USAGE_CACHE_TTL_MS = 10 * 60_000;
+/**
+ * The usage endpoint is rate-limited separately from inference (Claude Code
+ * can be working fine while it 429s). Honour its Retry-After across runs so a
+ * HUD / status bar polling every few seconds doesn't keep the limit alive.
+ */
+const USAGE_BACKOFF_FILE = "claude-usage-backoff.json";
+/** Fallback cooldown when a 429 carries no usable Retry-After. */
+const USAGE_429_DEFAULT_BACKOFF_MS = 10 * 60_000;
+/** While rate-limited, last good usage beats an error for this long. */
+const RATE_LIMITED_CACHE_TTL_MS = 24 * 60 * 60_000;
 
 type ClaudeOauth = {
   accessToken: string;
@@ -400,9 +410,30 @@ async function refreshAccessToken(
   );
 }
 
+class UsageRateLimitedError extends Error {
+  constructor(readonly until: number) {
+    const mins = Math.max(1, Math.ceil((until - Date.now()) / 60_000));
+    super(`Claude usage API rate-limited (HTTP 429); retry in ~${mins}m`);
+    this.name = "UsageRateLimitedError";
+  }
+}
+
+/** Retry-After is either delta-seconds or an HTTP date. */
+function retryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const secs = Number(header);
+  if (Number.isFinite(secs) && secs >= 0) return secs * 1000;
+  const at = Date.parse(header);
+  return Number.isNaN(at) ? null : Math.max(0, at - Date.now());
+}
+
 async function fetchUsageApi(
   accessToken: string,
+  accountId: string,
 ): Promise<{ ok: true; usage: UsageResponse } | { ok: false; status: number }> {
+  const backedOffUntil = await isBackedOff(USAGE_BACKOFF_FILE, accountId);
+  if (backedOffUntil) throw new UsageRateLimitedError(backedOffUntil);
+
   const res = await fetch(USAGE_URL, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -410,6 +441,13 @@ async function fetchUsageApi(
       "User-Agent": USER_AGENT,
     },
   });
+  if (res.status === 429) {
+    const waitMs =
+      retryAfterMs(res.headers.get("retry-after")) ??
+      USAGE_429_DEFAULT_BACKOFF_MS;
+    await markBackoff(USAGE_BACKOFF_FILE, accountId, waitMs, 429);
+    throw new UsageRateLimitedError(Date.now() + waitMs);
+  }
   if (!res.ok) return { ok: false, status: res.status };
   return { ok: true, usage: (await res.json()) as UsageResponse };
 }
@@ -577,7 +615,7 @@ export class ClaudeProvider implements Provider {
 
       // 1) Always try usage with the current access token first.
       //    Tokens often still work past expiresAt; this avoids refresh spam.
-      let usageResult = await fetchUsageApi(accessToken);
+      let usageResult = await fetchUsageApi(accessToken, account.id);
 
       // 2) Only refresh on 401 (or missing token), not merely because of expiresAt.
       if (!usageResult.ok && usageResult.status === 401) {
@@ -602,7 +640,7 @@ export class ClaudeProvider implements Provider {
           next,
         );
         if (!persisted.ok) writeWarning = persisted.warning;
-        usageResult = await fetchUsageApi(accessToken);
+        usageResult = await fetchUsageApi(accessToken, account.id);
       }
 
       // 3) Optional proactive refresh when token is near expiry but usage
@@ -654,9 +692,13 @@ export class ClaudeProvider implements Provider {
         writeWarning,
       );
     } catch (e) {
+      const rateLimited = e instanceof UsageRateLimitedError;
+
       // One-shot: if this slot's file is stale but Claude Code is currently
       // logged into the same plan/account, re-run save-claude and retry once.
-      if (opts.allowRehydrate && fileOauthForRehydrate) {
+      // Not on a usage 429 — the token is fine, and retrying spends another
+      // request against the very limit we just hit.
+      if (opts.allowRehydrate && fileOauthForRehydrate && !rateLimited) {
         try {
           const re = await tryRehydrateFromLiveLogin(
             account,
@@ -680,19 +722,21 @@ export class ClaudeProvider implements Provider {
         }
       }
 
-      // Prefer short-lived cache over a hard error (esp. refresh 429 storms).
+      // Prefer cache over a hard error (esp. 429 storms). A rate limit says
+      // nothing about the account, so older data is still worth showing then.
       const cached = await readUsageCache(account.id);
       if (cached) {
         const ageMs = Date.now() - Date.parse(cached.fetchedAt);
-        if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < USAGE_CACHE_TTL_MS) {
-          const ageMin = Math.max(1, Math.round(ageMs / 60_000));
+        const ttlMs = rateLimited ? RATE_LIMITED_CACHE_TTL_MS : USAGE_CACHE_TTL_MS;
+        if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < ttlMs) {
+          const age = formatDuration(Math.max(60, Math.round(ageMs / 60_000) * 60));
           const snap = buildSnapshot(
             account,
             { accessToken: "" },
             cached.usage,
             `${cached.sourceLabel ?? "cache"}+stale`,
             cached.fetchedAt,
-            `cached ${ageMin}m ago — ${e instanceof Error ? e.message : String(e)}`,
+            `cached ${age} ago — ${e instanceof Error ? e.message : String(e)}`,
           );
           if (cached.plan) snap.plan = cached.plan;
           snap.provenance = "partial";
