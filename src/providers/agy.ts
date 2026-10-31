@@ -1,5 +1,5 @@
 import type { AccountConfig, ProviderSnapshot, UsageWindow } from "../types.js";
-import { nowIso, secondsUntil } from "../utils/time.js";
+import { nowIso, secondsUntil, WEEK_SECONDS } from "../utils/time.js";
 import type { Provider } from "./types.js";
 import { collectAgyLocalStats } from "../stats/agy-local.js";
 import { execFile } from "node:child_process";
@@ -82,6 +82,7 @@ export class AgyProvider implements Provider {
             usedPercent,
             resetsAt,
             resetsInSeconds,
+            windowSeconds: baseLabel === "Weekly" ? WEEK_SECONDS : undefined,
           });
         }
       }

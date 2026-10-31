@@ -19,7 +19,7 @@ import {
   markBackoff,
 } from "../utils/backoff.js";
 import { formatFetchError } from "../utils/network.js";
-import { formatDuration, nowIso, secondsUntil } from "../utils/time.js";
+import { formatDuration, nowIso, secondsUntil, WEEK_SECONDS } from "../utils/time.js";
 import type { Provider } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -533,6 +533,9 @@ function windowsFromUsage(usage: UsageResponse): UsageWindow[] {
         usedPercent: lim.percent ?? null,
         resetsAt,
         resetsInSeconds: secondsUntil(resetsAt),
+        windowSeconds: kind === "weekly_all" || kind === "weekly_scoped"
+          ? WEEK_SECONDS
+          : undefined,
       });
     }
   } else {
@@ -552,6 +555,7 @@ function windowsFromUsage(usage: UsageResponse): UsageWindow[] {
         usedPercent: usage.seven_day.utilization ?? null,
         resetsAt: usage.seven_day.resets_at ?? null,
         resetsInSeconds: secondsUntil(usage.seven_day.resets_at),
+        windowSeconds: WEEK_SECONDS,
       });
     }
   }

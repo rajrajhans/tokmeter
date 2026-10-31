@@ -1,3 +1,21 @@
+export const WEEK_SECONDS = 7 * 24 * 60 * 60;
+
+/** Percentage of a quota period elapsed, based on its own reset time. */
+export function windowElapsedPercent(
+  windowSeconds: number,
+  resetsAt: string | null | undefined,
+  resetsInSeconds?: number | null,
+  now = Date.now(),
+): number | null {
+  if (!Number.isFinite(windowSeconds) || windowSeconds <= 0) return null;
+  const resetMs = resetsAt ? Date.parse(resetsAt) : NaN;
+  const remaining = Number.isFinite(resetMs)
+    ? (resetMs - now) / 1000
+    : resetsInSeconds;
+  if (remaining == null || !Number.isFinite(remaining)) return null;
+  return Math.max(0, Math.min(100, (1 - remaining / windowSeconds) * 100));
+}
+
 /** Format a duration in seconds as a short human string, e.g. "4h 16m". */
 export function formatDuration(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "—";

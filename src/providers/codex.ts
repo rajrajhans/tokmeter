@@ -288,6 +288,7 @@ function windowFromRate(
     usedPercent: w.used_percent ?? null,
     resetsAt,
     resetsInSeconds,
+    windowSeconds: w.limit_window_seconds,
   };
 }
 

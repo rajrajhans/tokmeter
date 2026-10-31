@@ -7,28 +7,32 @@ tokmeter · 2026-08-03 15:54
 
 ┌ Claude · max · Max 20x
 │  Current session     ██░░░░░░░░   18%  resets in 3h 15m
-│  Weekly · All models ██████░░░░   61%  resets Thu 7:29 pm
-│  Weekly · Fable      █░░░░░░░░░    6%  resets Thu 7:30 pm
+│  Weekly · All models ██████░░░░   61% used · 55% elapsed  resets Thu 7:29 pm
+│  Weekly · Fable      █░░░░░░░░░    6% used · 55% elapsed  resets Thu 7:30 pm
 │  Usage credits       off
 │
 ┌ Claude · pro
 │  Current session     ███░░░░░░░   28%  resets in 4h 45m
-│  Weekly · All models █░░░░░░░░░   14%  resets in 18h 35m
+│  Weekly · All models █░░░░░░░░░   14% used · 89% elapsed  resets in 18h 35m
 │  Usage credits       off
 │
 ┌ Codex · personal · plus
-│  Primary (7d)        ██████░░░░   61%  resets Sat 5:19 pm
+│  Primary (7d)        ██████░░░░   61% used · 35% elapsed  resets Sat 5:19 pm
 │  Credits             0
 │
 ┌ Grok · personal
 │  Identity            oidc · User
-│  Weekly credits      ██████░░░░   60%  resets in 24h 26m
+│  Weekly credits      ██████░░░░   60% used · 85% elapsed  resets in 24h 26m
 │  Local sessions      142 sessions · ~16.3M tokens (30d)
 │
 ┌ Cursor · personal · Pro
 │  Included usage      █░░░░░░░░░   15%  $2.97 / $20  resets Tue 10:30 pm
 │  On-demand spend     $0 / $20
 ```
+
+Weekly quota rows show how much of their own quota week has elapsed, calculated
+from each row's reset time and full period (seven days unless the provider reports
+an exact period). Compare this with the usage percentage to gauge your pace.
 
 ## Install
 

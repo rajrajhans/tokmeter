@@ -615,6 +615,9 @@ export class GrokProvider implements Provider {
           usedPercent: b.usedPercent,
           resetsAt: b.periodEnd,
           resetsInSeconds: secondsUntil(b.periodEnd),
+          windowSeconds: b.periodStart && b.periodEnd
+            ? (Date.parse(b.periodEnd) - Date.parse(b.periodStart)) / 1000
+            : undefined,
           extra: {
             periodStart: b.periodStart,
             periodEnd: b.periodEnd,

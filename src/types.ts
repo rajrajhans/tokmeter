@@ -39,6 +39,8 @@ export type UsageWindow = {
   usedPercent: number | null;
   resetsAt: string | null;
   resetsInSeconds?: number | null;
+  /** Full quota period, when known (not time remaining until reset). */
+  windowSeconds?: number;
   extra?: Record<string, unknown>;
 };
 

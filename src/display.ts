@@ -5,7 +5,12 @@ import {
   percentColorCode,
   progressBar,
 } from "./utils/progress.js";
-import { formatHeaderTime, formatReset } from "./utils/time.js";
+import {
+  formatHeaderTime,
+  formatReset,
+  WEEK_SECONDS,
+  windowElapsedPercent,
+} from "./utils/time.js";
 
 const LABEL_WIDTH = 20;
 
@@ -63,7 +68,7 @@ function providerTitle(s: ProviderSnapshot): string {
   return parts.join(" · ");
 }
 
-function renderWindowLine(w: UsageWindow): string {
+function renderWindowLine(w: UsageWindow, now: number): string {
   // Special non-percent windows
   if (w.id === "credits" || w.id === "reset-credits") {
     if (w.extra?.status === "off") {
@@ -152,10 +157,22 @@ function renderWindowLine(w: UsageWindow): string {
 
   const reset = formatReset(w.resetsAt, w.resetsInSeconds ?? null);
   const resetPart = reset ? dim(`  ${reset}`) : "";
-  return `│  ${padLabel(w.label)}${bar}  ${pct}${spendPart}${resetPart}`;
+  const weekly = w.windowSeconds === WEEK_SECONDS || /^Weekly\b/i.test(w.label);
+  const elapsed = weekly
+    ? windowElapsedPercent(
+        w.windowSeconds ?? WEEK_SECONDS,
+        w.resetsAt,
+        w.resetsInSeconds,
+        now,
+      )
+    : null;
+  const elapsedPart = elapsed == null
+    ? ""
+    : ` used${dim(` · ${Math.round(elapsed)}% elapsed`)}`;
+  return `│  ${padLabel(w.label)}${bar}  ${pct}${elapsedPart}${spendPart}${resetPart}`;
 }
 
-function renderSnapshot(s: ProviderSnapshot): string[] {
+function renderSnapshot(s: ProviderSnapshot, now: number): string[] {
   const lines: string[] = [];
   const title = providerTitle(s);
 
@@ -179,7 +196,7 @@ function renderSnapshot(s: ProviderSnapshot): string[] {
     ) {
       continue;
     }
-    lines.push(renderWindowLine(w));
+    lines.push(renderWindowLine(w, now));
   }
   if (s.local?.lines?.length) {
     for (const line of s.local.lines) {
@@ -212,8 +229,9 @@ export function renderHuman(
   const lines: string[] = [];
   lines.push(bold(`tokmeter · ${formatHeaderTime(headerAt)}`));
   lines.push("");
+  const now = Date.now();
   for (const s of snapshots) {
-    lines.push(...renderSnapshot(s));
+    lines.push(...renderSnapshot(s, now));
   }
   if (snapshots.length === 0) {
     lines.push(dim("No accounts configured. Run: tokmeter accounts list"));
@@ -307,7 +325,7 @@ export function renderLive(
   lines.push("");
   for (const entry of entries) {
     if (entry.status.phase === "done") {
-      lines.push(...renderSnapshot(entry.status.snapshot));
+      lines.push(...renderSnapshot(entry.status.snapshot, opts.now));
     } else {
       lines.push(...renderWaiting(entry, entry.status, opts.frame, opts.now));
     }
