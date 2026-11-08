@@ -18,6 +18,7 @@ import {
   isBackedOff,
   markBackoff,
 } from "../utils/backoff.js";
+import { claudePlanName } from "../claude-plan.js";
 import { formatFetchError } from "../utils/network.js";
 import { formatDuration, nowIso, secondsUntil, WEEK_SECONDS } from "../utils/time.js";
 import type { Provider } from "./types.js";
@@ -108,14 +109,7 @@ function planTier(oauth: ClaudeOauth): string {
 }
 
 function formatPlan(oauth: ClaudeOauth): string {
-  const sub = oauth.subscriptionType ?? "unknown";
-  const tier = planTier(oauth);
-  if (tier.includes("20x") || /max_20x/i.test(tier)) return "Max 20x";
-  if (tier.includes("5x") || /max_5x/i.test(tier)) return "Max 5x";
-  if (sub === "max") return "Max";
-  if (sub === "pro") return "Pro";
-  if (sub === "team") return "Team";
-  return sub.charAt(0).toUpperCase() + sub.slice(1);
+  return claudePlanName(oauth as Record<string, unknown>);
 }
 
 async function readKeychain(

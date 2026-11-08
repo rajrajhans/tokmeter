@@ -55,7 +55,7 @@ struct AccountSnapshot: Codable, Identifiable, Sendable {
         return ""
     }
 
-    /// Human title: "Claude · max · Max 20x" (never email).
+    /// Human title: "Claude · max · Ultra" (never email).
     var displayTitle: String {
         var parts = [providerName]
         if !label.isEmpty { parts.append(label) }

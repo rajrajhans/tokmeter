@@ -16,6 +16,7 @@ import {
   listCapturedClaudeAccounts,
   sanitizeLabel,
 } from "./claude-capture.js";
+import { claudePlanName } from "./claude-plan.js";
 import {
   pathExists,
   readJsonFile,
@@ -52,18 +53,6 @@ type ClaudeCredentials = {
 
 function keychainAccount(): string {
   return process.env.USER || userInfo().username;
-}
-
-function planHint(oauth: ClaudeOauth | undefined): string {
-  if (!oauth) return "unknown";
-  const sub = oauth.subscriptionType ?? "unknown";
-  const tier =
-    (typeof oauth.rateLimitTier === "string" && oauth.rateLimitTier) || "";
-  if (tier.includes("20x") || /max_20x/i.test(tier)) return "Max 20x";
-  if (tier.includes("5x") || /max_5x/i.test(tier)) return "Max 5x";
-  if (sub === "max") return "Max";
-  if (sub === "pro") return "Pro";
-  return String(sub);
 }
 
 function fingerprint(oauth: ClaudeOauth | undefined): string | null {
@@ -203,7 +192,7 @@ export async function useClaudeAccount(labelRaw: string): Promise<SwitchResult> 
 
   return {
     label,
-    plan: planHint(composed.claudeAiOauth),
+    plan: claudePlanName(composed.claudeAiOauth),
     path,
     wroteKeychain,
     wroteFile,
@@ -242,7 +231,7 @@ export async function claudeActiveStatus(): Promise<ActiveStatus> {
   for (const slot of slots) {
     try {
       const data = await readJsonFile<ClaudeCredentials>(slot.path);
-      const plan = planHint(data.claudeAiOauth);
+      const plan = claudePlanName(data.claudeAiOauth);
       const slotFp = fingerprint(data.claudeAiOauth);
       const active = Boolean(fp && slotFp && fp === slotFp);
       if (active) activeLabel = slot.label;
@@ -254,7 +243,7 @@ export async function claudeActiveStatus(): Promise<ActiveStatus> {
 
   return {
     activeLabel,
-    plan: planHint(live?.claudeAiOauth),
+    plan: claudePlanName(live?.claudeAiOauth),
     source,
     matches,
   };

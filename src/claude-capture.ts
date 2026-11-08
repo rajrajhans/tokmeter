@@ -9,6 +9,7 @@ import {
   saveConfig,
   upsertAccount,
 } from "./config.js";
+import { claudePlanName } from "./claude-plan.js";
 import {
   configDir,
   configPath,
@@ -51,21 +52,6 @@ type ClaudeCredentials = {
   claudeAiOauth?: ClaudeOauth;
   [key: string]: unknown;
 };
-
-function planHint(oauth: ClaudeOauth | undefined): string {
-  if (!oauth) return "unknown";
-  const sub = oauth.subscriptionType ?? "unknown";
-  const tier =
-    (typeof oauth.rateLimitTier === "string" && oauth.rateLimitTier) ||
-    (typeof oauth["rateLimitTiers"] === "string" &&
-      (oauth["rateLimitTiers"] as string)) ||
-    "";
-  if (tier.includes("20x") || /max_20x/i.test(tier)) return "Max 20x";
-  if (tier.includes("5x") || /max_5x/i.test(tier)) return "Max 5x";
-  if (sub === "max") return "Max";
-  if (sub === "pro") return "Pro";
-  return sub;
-}
 
 /** Read current Claude Code login (macOS keychain, then ~/.claude/.credentials.json). */
 export async function readCurrentClaudeCredentials(
@@ -199,7 +185,7 @@ export async function captureClaudeAccount(opts: {
   return {
     label,
     path,
-    plan: planHint(oauth),
+    plan: claudePlanName(oauth),
     source,
     registered,
     accountId,

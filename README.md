@@ -5,7 +5,7 @@ One CLI for **Claude Code**, **Codex**, **Grok**, and **Cursor** usage — sessi
 ```
 tokmeter · 2026-08-03 15:54
 
-┌ Claude · max · Max 20x
+┌ Claude · max · Ultra
 │  Current session     ██░░░░░░░░   18%  resets in 3h 15m
 │  Weekly · All models ██████░░░░   61% used · 55% elapsed  resets Thu 7:29 pm
 │  Weekly · Fable      █░░░░░░░░░    6% used · 55% elapsed  resets Thu 7:30 pm

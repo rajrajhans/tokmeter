@@ -58,8 +58,8 @@ function providerTitle(s: ProviderSnapshot): string {
   const name = PROVIDER_TITLES[s.provider] ?? s.provider;
   // Prefer plan-looking labels as-is; always show plan badge when present.
   const parts = [name];
-  // Avoid "Claude · personal · Max 20x" when label is just a slot name —
-  // show: Claude · max · Max 20x  or  Claude · Max 20x if label == plan-ish
+  // Avoid "Claude · personal · Ultra" when label is just a slot name —
+  // show: Claude · max · Ultra  or  Claude · Ultra if label == plan-ish
   if (s.label) parts.push(s.label);
   if (s.plan && s.plan.toLowerCase() !== s.label.toLowerCase()) {
     parts.push(s.plan);
