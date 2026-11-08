@@ -20,7 +20,7 @@ import {
 } from "../utils/backoff.js";
 import { claudePlanName } from "../claude-plan.js";
 import { formatFetchError } from "../utils/network.js";
-import { formatDuration, nowIso, secondsUntil, WEEK_SECONDS } from "../utils/time.js";
+import { nowIso, secondsUntil, WEEK_SECONDS } from "../utils/time.js";
 import type { Provider } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -690,13 +690,18 @@ export class ClaudeProvider implements Provider {
         writeWarning,
       );
     } catch (e) {
-      const rateLimited = e instanceof UsageRateLimitedError;
+      const usageRateLimited = e instanceof UsageRateLimitedError;
+      // A 429 from either the usage API or the OAuth token endpoint says
+      // nothing about the account, so last good usage stays worth showing.
+      const rateLimited =
+        usageRateLimited || (e instanceof RefreshError && e.status === 429);
 
       // One-shot: if this slot's file is stale but Claude Code is currently
       // logged into the same plan/account, re-run save-claude and retry once.
       // Not on a usage 429 — the token is fine, and retrying spends another
-      // request against the very limit we just hit.
-      if (opts.allowRehydrate && fileOauthForRehydrate && !rateLimited) {
+      // request against the very limit we just hit. (A refresh 429 still
+      // tries: the live login may already hold a fresh token.)
+      if (opts.allowRehydrate && fileOauthForRehydrate && !usageRateLimited) {
         try {
           const re = await tryRehydrateFromLiveLogin(
             account,
@@ -727,14 +732,14 @@ export class ClaudeProvider implements Provider {
         const ageMs = Date.now() - Date.parse(cached.fetchedAt);
         const ttlMs = rateLimited ? RATE_LIMITED_CACHE_TTL_MS : USAGE_CACHE_TTL_MS;
         if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < ttlMs) {
-          const age = formatDuration(Math.max(60, Math.round(ageMs / 60_000) * 60));
+          // Age is shown by the renderer ("updated … ago") once it matters.
           const snap = buildSnapshot(
             account,
             { accessToken: "" },
             cached.usage,
             `${cached.sourceLabel ?? "cache"}+stale`,
             cached.fetchedAt,
-            `cached ${age} ago — ${e instanceof Error ? e.message : String(e)}`,
+            `showing last saved usage — ${e instanceof Error ? e.message : String(e)}`,
           );
           if (cached.plan) snap.plan = cached.plan;
           snap.provenance = "partial";

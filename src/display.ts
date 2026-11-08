@@ -7,6 +7,7 @@ import {
 } from "./utils/progress.js";
 import {
   formatHeaderTime,
+  formatLastUpdated,
   formatReset,
   WEEK_SECONDS,
   windowElapsedPercent,
@@ -185,7 +186,10 @@ function renderSnapshot(s: ProviderSnapshot, now: number): string[] {
     return lines;
   }
 
-  lines.push(`${colors.cyan("┌")} ${bold(title)}`);
+  const updated = formatLastUpdated(s.fetchedAt, now);
+  lines.push(
+    `${colors.cyan("┌")} ${bold(title)}${updated ? `  ${dim(updated)}` : ""}`,
+  );
   for (const w of s.windows) {
     // Skip Grok's coarse "Local sessions" window when we have richer local stats
     if (

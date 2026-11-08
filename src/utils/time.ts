@@ -78,6 +78,32 @@ export function formatReset(
   return `resets in ${formatDuration(secs)}`;
 }
 
+/** Data older than this gets an explicit "updated …" stamp. */
+export const STALE_AFTER_MS = 15 * 60_000;
+
+/**
+ * "updated 12:18 · 2h 16m ago" when `fetchedAt` is older than STALE_AFTER_MS,
+ * otherwise null. Older than today adds the weekday ("updated Sat 12:18 …").
+ */
+export function formatLastUpdated(
+  fetchedAt: string | null | undefined,
+  now = Date.now(),
+): string | null {
+  if (!fetchedAt) return null;
+  const at = Date.parse(fetchedAt);
+  if (!Number.isFinite(at)) return null;
+  const ageMs = now - at;
+  if (ageMs < STALE_AFTER_MS) return null;
+  const d = new Date(at);
+  const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const sameDay = d.toDateString() === new Date(now).toDateString();
+  const when = sameDay
+    ? hhmm
+    : `${d.toLocaleDateString(undefined, { weekday: "short" })} ${hhmm}`;
+  const ago = formatDuration(Math.floor(ageMs / 60_000) * 60);
+  return `updated ${when} · ${ago} ago`;
+}
+
 export function nowIso(): string {
   return new Date().toISOString();
 }
