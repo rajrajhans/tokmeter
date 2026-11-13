@@ -26,6 +26,7 @@
               base = baseNameOf path;
             in
             !(lib.hasInfix "/node_modules" path)
+            && !(lib.hasInfix "/raycast" path)
             && !(lib.hasInfix "/dist" path)
             && !(lib.hasInfix "/.git" path)
             && !(lib.hasInfix "/.direnv" path)

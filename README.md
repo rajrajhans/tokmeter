@@ -137,6 +137,14 @@ Glanceable window (donut rings + thick bars) that polls `tokmeter --json` for pl
 
 Auto-refresh (default 30s), **⌘R** to refresh, optional **Keep on Top**. See [`macos/TokmeterHUD/README.md`](macos/TokmeterHUD/README.md).
 
+## Raycast
+
+A compact Raycast dashboard that reads `tokmeter --json`, with quota bars, reset times, and searchable account details. See [`raycast/README.md`](raycast/README.md).
+
+```bash
+cd raycast && npm install && npm run dev
+```
+
 ## License
 
 MIT
